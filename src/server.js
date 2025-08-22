@@ -65,6 +65,7 @@ const healthRoutes = require('./routes/health'); // ✅ CENTRALIZED: Health moni
 const webhookRoutes = require('./routes/webhooks'); // ✅ CENTRALIZED: Webhook processing
 const monitoringRoutes = require('./routes/monitoring'); // ✅ CENTRALIZED: Monitoring dashboard
 const securityHealthRoutes = require('./routes/security-health'); // Security health check
+const debugRoutes = require('./routes/debug'); // 🔧 DEBUG: Mobile detection testing
 
 // Import middleware
 const { authMiddleware, optionalAuth, requireRole } = require('./middleware/auth');
@@ -495,6 +496,10 @@ console.log('📊 Monitoring dashboard endpoints available: /monitoring');
 // Security health check endpoints
 app.use('/api/security', securityHealthRoutes);
 console.log('🛡️ Security health endpoints available: /api/security');
+
+// 🔧 DEBUG: Mobile detection testing endpoints (all environments for now)
+app.use('/api/debug', debugRoutes);
+console.log('🔧 Debug endpoints available: /api/debug');
 
 // Static file serving
 app.use('/uploads', express.static('uploads'));

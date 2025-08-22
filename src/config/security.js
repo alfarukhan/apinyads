@@ -92,35 +92,43 @@ class SecurityConfig {
 
     return {
       origin: (origin, callback) => {
-        // Allow requests with no origin (mobile apps, Postman, native apps)
-        if (!origin) return callback(null, true);
+        // ✅ MOBILE APPS: Always allow requests with no origin (mobile apps, native apps)
+        if (!origin) {
+          console.log('🔓 CORS: No origin - allowing (likely mobile app)');
+          return callback(null, true);
+        }
         
-        // Allow capacitor/ionic/file origins for mobile apps
+        // ✅ MOBILE APPS: Allow all mobile app origins
         if (origin && (
           origin.startsWith('capacitor://') || 
           origin.startsWith('ionic://') || 
           origin.startsWith('file://') ||
           origin === 'null' // Some mobile webviews send 'null'
         )) {
+          console.log(`📱 CORS: Mobile origin ${origin} - allowing`);
           return callback(null, true);
         }
         
-        // Development mode - allow all localhost
-        if (this.isDevelopment && origin.match(/^https?:\/\/(localhost|127\.0\.0\.1):\d+$/)) {
+        // ✅ DEVELOPMENT: Allow all localhost and LAN IPs
+        if (this.isDevelopment && (
+          origin.match(/^https?:\/\/(localhost|127\.0\.0\.1):\d+$/) ||
+          origin.includes('192.168.') ||
+          origin.includes('10.0.') ||
+          origin.includes('172.16.') ||
+          origin.includes('103.191.') // User's current IP range
+        )) {
+          console.log(`🛠️ CORS: Development origin ${origin} - allowing`);
           return callback(null, true);
         }
         
         // Check allowed origins
         if (allowedOrigins.includes(origin)) {
+          console.log(`✅ CORS: Whitelisted origin ${origin} - allowing`);
           callback(null, true);
         } else {
-          // In production, log but don't block mobile apps
-          if (this.isProduction) {
-            console.warn(`⚠️ CORS: Unrecognized origin ${origin}, allowing for mobile compatibility`);
-            callback(null, true);
-          } else {
-            callback(new Error(`CORS policy violation: Origin ${origin} not allowed`));
-          }
+          // ✅ PRODUCTION: Always allow for mobile compatibility
+          console.warn(`⚠️ CORS: Unrecognized origin ${origin}, allowing for mobile compatibility`);
+          callback(null, true);
         }
       },
       credentials: true,
@@ -136,9 +144,17 @@ class SecurityConfig {
         'X-Access-Token',
         'X-API-Key', // For internal services
         'X-Client-Version',
-        'X-Request-Signature' // For request signing
+        'X-Request-Signature', // For request signing
+        'X-Client-Type', // ✅ Mobile identification header
+        'X-App-Platform', // ✅ Platform identification header
+        'User-Agent'
       ],
-      exposedHeaders: ['Authorization', 'X-Total-Count'],
+      exposedHeaders: [
+        'Authorization', 
+        'X-Total-Count',
+        'X-Mobile-App-Detected', // ✅ Expose mobile detection result
+        'X-Security-Headers-Bypassed' // ✅ Expose security bypass info
+      ],
       optionsSuccessStatus: 200,
       preflightContinue: false,
       maxAge: this.isProduction ? 86400 : 0

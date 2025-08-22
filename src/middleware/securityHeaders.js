@@ -11,6 +11,30 @@ const securityConfig = require('../config/security');
 const enhancedSecurityHeaders = (options = {}) => {
   return (req, res, next) => {
     try {
+      // ✅ CRITICAL: Check if this is a mobile app request first
+      const userAgent = req.get('user-agent') || '';
+      const clientType = req.get('X-Client-Type') || '';
+      const origin = req.get('origin') || '';
+      
+      const isMobileApp = userAgent.includes('DanceSignal') || 
+                         userAgent.includes('Flutter') ||
+                         userAgent.includes('Dart/') ||
+                         userAgent.includes('okhttp') ||
+                         userAgent.includes('CFNetwork') ||
+                         clientType === 'mobile' ||
+                         origin === 'capacitor://localhost' ||
+                         origin === 'ionic://localhost' ||
+                         origin === 'file://' ||
+                         !origin;
+                         
+      // ✅ MOBILE BYPASS: Skip all security headers for mobile apps
+      if (isMobileApp) {
+        console.log('📱 Mobile app detected - skipping security headers');
+        res.setHeader('X-Mobile-App-Detected', 'true');
+        res.setHeader('X-Security-Headers-Bypassed', 'mobile');
+        return next();
+      }
+
       const config = securityConfig.getHelmetConfig();
       const {
         enableCSP = securityConfig.isProduction,
@@ -186,10 +210,27 @@ const apiSecurityHeaders = (req, res, next) => {
 const mobileAppHeaders = (req, res, next) => {
   // Check if request is from mobile app
   const userAgent = req.get('user-agent') || '';
+  const clientType = req.get('X-Client-Type') || '';
+  const origin = req.get('origin') || '';
+  
+  // ✅ Enhanced mobile app detection
   const isMobileApp = userAgent.includes('DanceSignal') || 
                      userAgent.includes('Flutter') ||
                      userAgent.includes('Dart/') ||
-                     req.get('X-Client-Type') === 'mobile';
+                     userAgent.includes('okhttp') || // Android HTTP client
+                     userAgent.includes('CFNetwork') || // iOS HTTP client
+                     clientType === 'mobile' ||
+                     origin === 'capacitor://localhost' ||
+                     origin === 'ionic://localhost' ||
+                     origin === 'file://' ||
+                     !origin; // Many mobile apps don't send origin
+                     
+  console.log(`🔍 Mobile Detection Debug:
+    User-Agent: ${userAgent}
+    Client-Type: ${clientType}
+    Origin: ${origin}
+    Is Mobile App: ${isMobileApp}
+  `);
 
   if (isMobileApp) {
     try {
