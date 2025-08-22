@@ -40,12 +40,13 @@ const enhancedSecurityHeaders = (options = {}) => {
           const cspString = Object.entries(cspDirectives)
             .map(([directive, sources]) => {
               const kebabCase = directive.replace(/([A-Z])/g, '-$1').toLowerCase();
-              return `${kebabCase} ${Array.isArray(sources) ? sources.join(' ') : sources}`;
+              const sourceString = Array.isArray(sources) ? sources.join(' ') : String(sources);
+              return `${kebabCase} ${sourceString}`;
             })
             .join('; ');
 
-          // Only set CSP if string is valid
-          if (cspString && cspString.length > 0) {
+          // Only set CSP if string is valid and not empty
+          if (cspString && cspString.length > 0 && !cspString.includes('undefined')) {
             res.setHeader('Content-Security-Policy', cspString);
           }
         } catch (cspError) {
@@ -54,65 +55,75 @@ const enhancedSecurityHeaders = (options = {}) => {
         console.log('🛡️ CSP Header set');
       }
 
-      // HTTP Strict Transport Security (HSTS)
+      // HTTP Strict Transport Security (HSTS) - only for production
       if (enableHSTS && securityConfig.isProduction) {
-        const hstsValue = `max-age=${config.hsts?.maxAge || 31536000}; includeSubDomains; preload`;
-        res.setHeader('Strict-Transport-Security', hstsValue);
-        console.log('🔒 HSTS Header set');
+        try {
+          const hstsValue = `max-age=${config.hsts?.maxAge || 31536000}; includeSubDomains; preload`;
+          res.setHeader('Strict-Transport-Security', hstsValue);
+          console.log('🔒 HSTS Header set');
+        } catch (hstsError) {
+          console.warn('⚠️ HSTS header failed:', hstsError.message);
+        }
       }
 
       // X-Frame-Options
       if (enableFrameguard) {
-        res.setHeader('X-Frame-Options', 'DENY');
-        console.log('🖼️ X-Frame-Options Header set');
+        try {
+          res.setHeader('X-Frame-Options', 'DENY');
+          console.log('🖼️ X-Frame-Options Header set');
+        } catch (frameError) {
+          console.warn('⚠️ X-Frame-Options header failed:', frameError.message);
+        }
       }
 
       // X-XSS-Protection
       if (enableXSSFilter) {
-        res.setHeader('X-XSS-Protection', '1; mode=block');
-        console.log('🛡️ X-XSS-Protection Header set');
+        try {
+          res.setHeader('X-XSS-Protection', '1; mode=block');
+          console.log('🛡️ X-XSS-Protection Header set');
+        } catch (xssError) {
+          console.warn('⚠️ X-XSS-Protection header failed:', xssError.message);
+        }
       }
 
       // X-Content-Type-Options
       if (enableNoSniff) {
-        res.setHeader('X-Content-Type-Options', 'nosniff');
-        console.log('🔍 X-Content-Type-Options Header set');
-      }
-
-      // Referrer Policy
-      res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
-
-      // Permissions Policy (formerly Feature Policy) - only for production
-      if (securityConfig.isProduction) {
         try {
-          const permissionsPolicy = [
-            'geolocation=(self)',
-            'camera=(self)',
-            'microphone=(self)',
-            'payment=(self)',
-            'accelerometer=(self)',
-            'gyroscope=(self)',
-            'usb=()',
-            'bluetooth=()'
-          ].join(', ');
-          res.setHeader('Permissions-Policy', permissionsPolicy);
-        } catch (permError) {
-          console.warn('⚠️ Permissions Policy header creation failed:', permError.message);
+          res.setHeader('X-Content-Type-Options', 'nosniff');
+          console.log('🔍 X-Content-Type-Options Header set');
+        } catch (noSniffError) {
+          console.warn('⚠️ X-Content-Type-Options header failed:', noSniffError.message);
         }
       }
 
+      // Referrer Policy
+      try {
+        res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+      } catch (refError) {
+        console.warn('⚠️ Referrer Policy header failed:', refError.message);
+      }
+
+      // Skip Permissions Policy for mobile compatibility
+      // This header causes issues with mobile webviews and external service access
+
       // Cross-Origin Policies
-      res.setHeader('Cross-Origin-Embedder-Policy', 'unsafe-none'); // More permissive for API
-      res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
-      res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+      try {
+        res.setHeader('Cross-Origin-Embedder-Policy', 'unsafe-none'); // More permissive for API
+        res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
+        res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+      } catch (coError) {
+        console.warn('⚠️ Cross-Origin policies header failed:', coError.message);
+      }
 
       // API-specific headers
-      res.setHeader('X-API-Version', '1.0.0');
-      res.setHeader('X-Environment', securityConfig.environment);
-      
-      // Security headers
-      res.setHeader('X-Powered-By', 'DanceSignal API'); // Custom instead of removing
-      res.setHeader('X-Security-Headers', 'enabled');
+      try {
+        res.setHeader('X-API-Version', '1.0.0');
+        res.setHeader('X-Environment', securityConfig.environment || 'unknown');
+        res.setHeader('X-Powered-By', 'DanceSignal API'); // Custom instead of removing
+        res.setHeader('X-Security-Headers', 'enabled');
+      } catch (apiError) {
+        console.warn('⚠️ API headers failed:', apiError.message);
+      }
       
       // Rate limiting info headers (if available)
       if (req.rateLimit) {
@@ -186,23 +197,32 @@ const mobileAppHeaders = (req, res, next) => {
       res.setHeader('X-Mobile-Optimized', 'true');
       res.setHeader('X-App-Cache-Control', 'max-age=300'); // 5 minutes cache for mobile
       
-      // More permissive but valid CSP for mobile apps
+      // Very permissive CSP for mobile apps to allow external services
       const mobileCsp = [
-        "default-src 'self' 'unsafe-inline' 'unsafe-eval' https: data:",
-        "img-src 'self' data: https: blob:",
-        "connect-src 'self' https: wss:",
-        "media-src 'self' data: https: blob:",
-        "font-src 'self' data: https:",
-        "style-src 'self' 'unsafe-inline' https:",
-        "script-src 'self' 'unsafe-inline' 'unsafe-eval' https:"
+        "default-src 'self' 'unsafe-inline' 'unsafe-eval' https: data: blob:",
+        "img-src 'self' data: https: blob: *",
+        "connect-src 'self' https: wss: ws: * api.midtrans.com app.sandbox.midtrans.com *.googleapis.com *.google.com",
+        "media-src 'self' data: https: blob: *",
+        "font-src 'self' data: https: *",
+        "style-src 'self' 'unsafe-inline' https: *",
+        "script-src 'self' 'unsafe-inline' 'unsafe-eval' https: * *.googleapis.com *.google.com *.midtrans.com",
+        "frame-src 'self' https: * *.midtrans.com *.google.com *.googleapis.com",
+        "child-src 'self' https: * *.midtrans.com *.google.com",
+        "worker-src 'self' blob:"
       ].join('; ');
       
-      res.setHeader('Content-Security-Policy', mobileCsp);
+      // Only set CSP if not disabled for mobile
+      const disableCsp = process.env.DISABLE_STRICT_CSP === 'true';
+      if (!disableCsp) {
+        res.setHeader('Content-Security-Policy', mobileCsp);
+      }
       
-      // Allow all origins for mobile app (CORS is handled separately)
+      // Very permissive CORS for mobile apps
       res.setHeader('Access-Control-Allow-Origin', '*');
-      res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS, PATCH');
-      res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept, Origin, Cache-Control');
+      res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS, PATCH, HEAD');
+      res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept, Origin, Cache-Control, X-API-Key, X-Client-Version');
+      res.setHeader('Access-Control-Allow-Credentials', 'true');
+      res.setHeader('Access-Control-Max-Age', '86400');
       
       console.log('📱 Mobile app headers applied');
     } catch (mobileError) {

@@ -4,7 +4,7 @@
  */
 
 const securityConfig = require('../config/security');
-const { enhancedSecurityHeaders, apiSecurityHeaders, adminHeaders, webhookHeaders } = require('./securityHeaders');
+const { enhancedSecurityHeaders, apiSecurityHeaders, adminHeaders, webhookHeaders, mobileAppHeaders } = require('./securityHeaders');
 const { validateInternalAPIKey, validateAdminAPIKey, validateWebhookSignature } = require('./apiKeyValidation');
 const { validateRequestSignature, optionalRequestSignature } = require('./requestSignature');
 const { adminIPWhitelist, internalServiceIPWhitelist, webhookIPWhitelist, ipInfoMiddleware } = require('./ipWhitelist');
@@ -30,6 +30,12 @@ const applySecurityMiddleware = (app) => {
   if (process.env.ENABLE_ENHANCED_SECURITY_HEADERS === 'true') {
     app.use(enhancedSecurityHeaders());
     console.log('✅ Security headers enabled');
+  }
+  
+  // 3.5. Mobile app headers for API routes
+  if (process.env.MOBILE_APP_MODE === 'true') {
+    app.use('/api', mobileAppHeaders);
+    console.log('✅ Mobile app headers enabled');
   }
   
   // 4. Public API access control
