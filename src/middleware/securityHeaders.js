@@ -14,14 +14,26 @@ const enhancedSecurityHeaders = (options = {}) => {
       // ✅ CRITICAL: Check if this is a mobile app request first
       const userAgent = req.get('user-agent') || '';
       const clientType = req.get('X-Client-Type') || '';
+      const mobileDevice = req.get('X-Mobile-Device') || '';
       const origin = req.get('origin') || '';
       
+      // ✅ ENHANCED: Comprehensive mobile detection for real devices and release builds
       const isMobileApp = userAgent.includes('DanceSignal') || 
                          userAgent.includes('Flutter') ||
                          userAgent.includes('Dart/') ||
                          userAgent.includes('okhttp') ||
                          userAgent.includes('CFNetwork') ||
+                         // ✅ ADD: Release build patterns
+                         userAgent.includes('Android') ||
+                         userAgent.includes('iPhone') ||
+                         userAgent.includes('Mobile') ||
+                         userAgent.includes('AppleWebKit') && userAgent.includes('Mobile') ||
+                         // ✅ ADD: Network stack patterns  
+                         userAgent.includes('cronet') ||
+                         userAgent.includes('ReactNative') ||
+                         // ✅ Headers & origins
                          clientType === 'mobile' ||
+                         mobileDevice === 'true' || // New explicit mobile flag
                          origin === 'capacitor://localhost' ||
                          origin === 'ionic://localhost' ||
                          origin === 'file://' ||
@@ -211,23 +223,35 @@ const mobileAppHeaders = (req, res, next) => {
   // Check if request is from mobile app
   const userAgent = req.get('user-agent') || '';
   const clientType = req.get('X-Client-Type') || '';
+  const mobileDevice = req.get('X-Mobile-Device') || '';
   const origin = req.get('origin') || '';
   
-  // ✅ Enhanced mobile app detection
+  // ✅ ENHANCED: Comprehensive mobile detection (sync with enhancedSecurityHeaders)
   const isMobileApp = userAgent.includes('DanceSignal') || 
                      userAgent.includes('Flutter') ||
                      userAgent.includes('Dart/') ||
-                     userAgent.includes('okhttp') || // Android HTTP client
-                     userAgent.includes('CFNetwork') || // iOS HTTP client
+                     userAgent.includes('okhttp') ||
+                     userAgent.includes('CFNetwork') ||
+                     // ✅ ADD: Release build patterns
+                     userAgent.includes('Android') ||
+                     userAgent.includes('iPhone') ||
+                     userAgent.includes('Mobile') ||
+                     userAgent.includes('AppleWebKit') && userAgent.includes('Mobile') ||
+                     // ✅ ADD: Network stack patterns  
+                     userAgent.includes('cronet') ||
+                     userAgent.includes('ReactNative') ||
+                     // ✅ Headers & origins
                      clientType === 'mobile' ||
+                     mobileDevice === 'true' || // New explicit mobile flag
                      origin === 'capacitor://localhost' ||
                      origin === 'ionic://localhost' ||
                      origin === 'file://' ||
-                     !origin; // Many mobile apps don't send origin
+                     !origin;
                      
   console.log(`🔍 Mobile Detection Debug:
     User-Agent: ${userAgent}
     Client-Type: ${clientType}
+    Mobile-Device: ${mobileDevice}
     Origin: ${origin}
     Is Mobile App: ${isMobileApp}
   `);

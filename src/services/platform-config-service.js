@@ -41,8 +41,16 @@ class PlatformConfigService {
       });
 
       if (!config) {
-        console.warn(`⚠️ Platform config not found: ${key}, using default: ${defaultValue}`);
-        return defaultValue;
+        // ✅ Use hardcoded defaults for critical platform configs to prevent database dependency
+        const criticalDefaults = {
+          'PLATFORM_FEE_ENABLED': true,
+          'PLATFORM_FEE_AMOUNT': 25000,
+          'PLATFORM_FEE_CURRENCY': 'IDR'
+        };
+        
+        const finalDefault = criticalDefaults[key] !== undefined ? criticalDefaults[key] : defaultValue;
+        console.log(`✅ Platform config not in DB: ${key}, using default: ${finalDefault}`);
+        return finalDefault;
       }
 
       // Parse value based on data type

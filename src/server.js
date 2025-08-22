@@ -7,8 +7,8 @@ const morgan = require('morgan');
 const rateLimit = require('express-rate-limit');
 require('dotenv').config();
 
-// ✅ TIMEZONE: Set server timezone to Jakarta (GMT+7)
-process.env.TZ = 'Asia/Jakarta';
+// ✅ REMOVED: Jakarta timezone setting - causes JWT conflicts with Firebase UTC validation
+// Server will use default UTC time to prevent JWT signature mismatches
 
 // Fix MaxListeners warning
 process.setMaxListeners(20);
@@ -17,8 +17,26 @@ process.setMaxListeners(20);
 const { createLogger, LoggerFactory } = require('./services/core/SmartLogger');
 const LoggingService = require('./services/core/LoggingService');
 
-// ✅ TIMEZONE: Import timezone helper for consistent date handling
-const { getJakartaNow, getTimezoneInfo, formatJakartaDate } = require('./utils/timezone-helper');
+// ✅ SIMPLE: Add timestamp to all console logs
+const originalLog = console.log;
+const originalError = console.error;
+const originalWarn = console.warn;
+
+const getTimestamp = () => new Date().toLocaleString('en-US', { 
+  hour12: false, 
+  year: 'numeric',
+  month: '2-digit', 
+  day: '2-digit',
+  hour: '2-digit', 
+  minute: '2-digit', 
+  second: '2-digit'
+});
+
+console.log = (...args) => originalLog(`[${getTimestamp()}]`, ...args);
+console.error = (...args) => originalError(`[${getTimestamp()}]`, ...args);  
+console.warn = (...args) => originalWarn(`[${getTimestamp()}]`, ...args);
+
+// ✅ REMOVED: Timezone helper import - causes Firebase JWT validation issues
 
 // ✅ ENTERPRISE: Use centralized singleton instead of new instance
 const { prisma } = require('./lib/prisma');
@@ -371,7 +389,11 @@ if (NODE_ENV === 'development') {
 }
 
 // Logging
-app.use(morgan(NODE_ENV === 'production' ? 'combined' : 'dev'));
+// ✅ ENHANCED: Morgan logging with timestamp  
+app.use(morgan(NODE_ENV === 'production' 
+  ? ':remote-addr - :remote-user [:date[iso]] ":method :url HTTP/:http-version" :status :res[content-length] ":referrer" ":user-agent"'
+  : '🌐 :method :url :status :res[content-length] - :response-time ms [:date[clf]]'
+));
 
 // Health check endpoint
 app.get('/health', (req, res) => {
@@ -574,16 +596,13 @@ process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 
 // Start server
 server.listen(PORT, '0.0.0.0', async () => {
-  console.log(`🚀 Server running on port ${PORT}`);
+  console.log(`🚀 DanceSignal API Server running on port ${PORT}`);
   console.log(`📊 Environment: ${process.env.NODE_ENV}`);
-  
-  // ✅ TIMEZONE: Display timezone configuration
-  const timezoneInfo = getTimezoneInfo();
-  console.log(`🕐 Timezone: ${timezoneInfo.name} (${timezoneInfo.offset})`);
-  console.log(`📅 Server time: ${formatJakartaDate(getJakartaNow())}`);
-  
+  console.log(`🕐 Server started at: ${new Date().toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' })} (Jakarta)`);
+  console.log(`⏰ UTC Time: ${new Date().toISOString()}`);
   console.log(`🔗 API Base URL: http://localhost:${PORT}/api`);
   console.log(`📱 Mobile access: http://10.0.2.2:${PORT}/api (Android emulator)`);
+  console.log(`🌐 Real device: http://192.168.100.169:${PORT}/api`);
   console.log(`🔌 WebSocket URL: ws://localhost:${PORT}`);
   
   // ✅ REAL-TIME: Initialize Chat WebSocket Service
