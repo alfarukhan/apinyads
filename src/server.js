@@ -598,8 +598,8 @@ process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 server.listen(PORT, '0.0.0.0', async () => {
   console.log(`🚀 DanceSignal API Server running on port ${PORT}`);
   console.log(`📊 Environment: ${process.env.NODE_ENV}`);
-  console.log(`🕐 Server started at: ${new Date().toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' })} (Jakarta)`);
-  console.log(`⏰ UTC Time: ${new Date().toISOString()}`);
+  console.log(`🕐 Server started at: ${new Date().toLocaleString()}`);
+  console.log(`⏰ Server time: ${new Date().toString()}`);
   console.log(`🔗 API Base URL: http://localhost:${PORT}/api`);
   console.log(`📱 Mobile access: http://10.0.2.2:${PORT}/api (Android emulator)`);
   console.log(`🌐 Real device: http://192.168.100.169:${PORT}/api`);

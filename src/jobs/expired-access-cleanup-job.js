@@ -1,6 +1,6 @@
 const { PrismaClient } = require('@prisma/client');
 const cron = require('node-cron');
-const { getJakartaNow, addDaysJakarta } = require('../utils/timezone-helper');
+// ✅ REMOVED: Timezone helper - use system default time
 
 const prisma = new PrismaClient();
 
@@ -15,8 +15,8 @@ const cleanupExpiredAccess = async () => {
   try {
     console.log('🧹 Starting expired access cleanup job...');
     
-    const now = getJakartaNow();
-    const yesterday = addDaysJakarta(now, -1);
+    const now = new Date();
+    const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000); // 24 hours ago
     
     // Find access tickets for events that ended yesterday or earlier
     // and were never used (user didn't attend)
@@ -142,7 +142,7 @@ const cleanupExpiredAccess = async () => {
  */
 const getCleanupStats = async () => {
   try {
-    const now = getJakartaNow();
+    const now = new Date();
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
     
     const stats = await prisma.auditLog.findMany({

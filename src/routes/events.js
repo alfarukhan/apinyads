@@ -6,8 +6,7 @@ const { getNotificationService } = require('../services/core');
 // ✅ ENTERPRISE: Use centralized singleton instead of new instance
 const { prisma } = require('../lib/prisma');
 
-// ✅ TIMEZONE: Use Jakarta timezone for consistent date handling
-const { getJakartaNow, addDaysJakarta, toJakartaTime } = require('../utils/timezone-helper');
+// ✅ REMOVED: Timezone helper - use system default time
 
 // ✅ ENTERPRISE: Use centralized validation schemas
 const { eventCreateSchema, eventUpdateSchema, paginationSchema, eventSearchSchema } = require('../lib/validation-schemas');
@@ -70,7 +69,7 @@ router.get('/',
   // Build where clause
   const where = {
     isActive: true,
-    ...(upcoming === 'true' && { startDate: { gte: getJakartaNow() } }),
+    ...(upcoming === 'true' && { startDate: { gte: new Date() } }),
     ...(category && { category: { contains: category, mode: 'insensitive' } }),
     ...(city && { location: { contains: city, mode: 'insensitive' } }),
     ...(search && {
@@ -918,7 +917,7 @@ router.get('/:id/stats', authMiddleware, asyncHandler(async (req, res) => {
     where: { 
       eventId: id,
       createdAt: {
-        gte: addDaysJakarta(getJakartaNow(), -30) // Last 30 days
+        gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) // Last 30 days
       }
     },
     select: {
@@ -929,7 +928,7 @@ router.get('/:id/stats', authMiddleware, asyncHandler(async (req, res) => {
   // Calculate peak sales hour
   const salesByHour = {};
   recentSales.forEach(sale => {
-    const hour = toJakartaTime(sale.createdAt).getHours();
+    const hour = sale.createdAt.getHours();
     salesByHour[hour] = (salesByHour[hour] || 0) + 1;
   });
   
@@ -1307,7 +1306,7 @@ router.post('/:id/test-ticket', authMiddleware, asyncHandler(async (req, res) =>
       status: 'CONFIRMED',
       currency: event.currency || 'IDR',
       price: accessTier?.price || 100000,
-      validUntil: addDaysJakarta(getJakartaNow(), 30), // Valid for 30 days
+      validUntil: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // Valid for 30 days
       userId: req.user.id, // Use current user
       eventId: id,
       accessTierId: accessTier?.id || null,
@@ -1371,8 +1370,8 @@ router.post('/:id/test-guestlist', authMiddleware, asyncHandler(async (req, res)
       where: { id: existing.id },
       data: {
         status: status,
-        ...(status === 'APPROVED' ? { approvedAt: getJakartaNow(), approvedBy: req.user.id } : {}),
-        ...(status === 'REJECTED' ? { rejectedAt: getJakartaNow(), approvedBy: req.user.id } : {})
+        ...(status === 'APPROVED' ? { approvedAt: new Date(), approvedBy: req.user.id } : {}),
+        ...(status === 'REJECTED' ? { rejectedAt: new Date(), approvedBy: req.user.id } : {})
       },
       include: {
         user: {
@@ -1399,13 +1398,13 @@ router.post('/:id/test-guestlist', authMiddleware, asyncHandler(async (req, res)
       status: status,
       isPaid: status === 'APPROVED',
       ...(status === 'APPROVED' ? { 
-        approvedAt: getJakartaNow(), 
+        approvedAt: new Date(), 
         approvedBy: req.user.id,
-        paidAt: getJakartaNow(),
+        paidAt: new Date(),
         platformFee: 25000
       } : {}),
       ...(status === 'REJECTED' ? { 
-        rejectedAt: getJakartaNow(), 
+        rejectedAt: new Date(), 
         approvedBy: req.user.id 
       } : {})
     },
@@ -1616,7 +1615,7 @@ router.post('/:id/guest-list', authMiddleware, asyncHandler(async (req, res) => 
   // Determine initial status based on approval requirement
   const initialStatus = event.guestlistRequiresApproval ? 'PENDING' : 'APPROVED';
   const approvalData = event.guestlistRequiresApproval ? {} : {
-    approvedAt: getJakartaNow(),
+    approvedAt: new Date(),
     approvedBy: 'AUTO_APPROVED'
   };
 

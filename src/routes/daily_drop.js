@@ -9,19 +9,7 @@ const { prisma } = require('../lib/prisma');
 // ✅ ENTERPRISE: Use centralized user selectors
 const userSelectors = require('../lib/user-selectors');
 
-// ✅ TIMEZONE: Use Jakarta timezone for consistent date handling
-const { 
-  getJakartaNow,
-  getJakartaToday, 
-  getJakartaTomorrow, 
-  getJakartaTodayUTCDate,
-  getJakartaTomorrowUTCDate,
-  getJakartaDateRange,
-  toJakartaTime,
-  formatJakartaDate,
-  createJakartaDate,
-  isDateMatchJakarta
-} = require('../utils/timezone-helper');
+// ✅ REMOVED: Timezone helper - use system default time
 
 
 // @route   GET /api/daily-drop
@@ -42,11 +30,13 @@ router.get('/', optionalAuth, async (req, res) => {
     
     // Regular single daily drop request - use UTC window derived from Jakarta calendar date
     // This ensures DB DATE column comparisons are stable and not shifted
-    const today = getJakartaTodayUTCDate();
-    const tomorrow = getJakartaTomorrowUTCDate();
+    const today = new Date();
+    today.setHours(0, 0, 0, 0); // Start of day
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1); // Next day
 
-    console.log(`🔍 Looking for daily drop on date: ${today.toISOString().split('T')[0]} (Jakarta GMT+7)`);
-    console.log(`🔍 Server time range: ${formatJakartaDate(today)} to ${formatJakartaDate(tomorrow)}`);
+    console.log(`🔍 Looking for daily drop on date: ${today.toISOString().split('T')[0]}`);
+    console.log(`🔍 Server time range: ${today.toString()} to ${tomorrow.toString()}`);
 
     // Debug: Check what daily drops exist in the database
     const allDailyDrops = await prisma.dailyDrop.findMany({
@@ -59,12 +49,12 @@ router.get('/', optionalAuth, async (req, res) => {
       artist: d.artistName, 
       date: d.date.toISOString().split('T')[0],
       dateUTC: d.date.toISOString(),
-      dateJakarta: formatJakartaDate(d.date)
+      dateSystem: d.date.toString()
     })));
 
-    console.log(`🎯 Looking for daily drop with date range (UTC window for Jakarta date):`);
-    console.log(`   From (UTC): ${today.toISOString()}  | Jakarta: ${formatJakartaDate(today)}`);
-    console.log(`   To   (UTC): ${tomorrow.toISOString()} | Jakarta: ${formatJakartaDate(tomorrow)}`);
+    console.log(`🎯 Looking for daily drop with date range (system time):`);
+    console.log(`   From: ${today.toISOString()}`);
+    console.log(`   To: ${tomorrow.toISOString()}`);
 
     // Check if there's a daily drop configured for today
     let dailyDrop = await prisma.dailyDrop.findFirst({
@@ -99,7 +89,7 @@ router.get('/', optionalAuth, async (req, res) => {
     }
 
     console.log(`✅ Found daily drop for ${today.toISOString().split('T')[0]}: ${dailyDrop.trackName} by ${dailyDrop.artistName}`);
-    console.log(`📅 Daily drop date in DB: ${dailyDrop.date.toISOString()} (${formatJakartaDate(dailyDrop.date)})`);
+    console.log(`📅 Daily drop date in DB: ${dailyDrop.date.toISOString()}`);
 
     // Format response
     const response = {
@@ -171,9 +161,9 @@ router.post('/', authMiddleware, async (req, res) => {
     }
 
     // ✅ TIMEZONE: Accept 'YYYY-MM-DD' then convert to UTC midnight for that Jakarta calendar date
-    const dropDate = date ? createJakartaDate(date) : getJakartaTodayUTCDate();
+    const dropDate = date ? new Date(date + 'T00:00:00.000Z') : new Date();
     
-    console.log(`💾 Saving daily drop with date: ${dropDate.toISOString()} (${formatJakartaDate(dropDate)})`);
+    console.log(`💾 Saving daily drop with date: ${dropDate.toISOString()}`);
 
     // Check if daily drop already exists for this date
     const existingDrop = await prisma.dailyDrop.findFirst({
@@ -484,7 +474,8 @@ async function handleDailyDropsList(req, res) {
     }
     
     if (date) {
-      const { start: searchDate, end: nextDay } = getJakartaDateRange(date);
+      const searchDate = new Date(date + 'T00:00:00.000Z');
+      const nextDay = new Date(searchDate.getTime() + 24 * 60 * 60 * 1000);
       
       where.date = {
         gte: searchDate,
@@ -564,7 +555,8 @@ async function handleDailyDropsList(req, res) {
 // Auto-cleanup function to delete old daily drops
 async function cleanupOldDailyDrops() {
   try {
-    const today = getJakartaToday();
+    const today = new Date();
+    today.setHours(0, 0, 0, 0); // Start of day
 
     // Delete daily drops that are older than today (past their featured date)
     const deletedCount = await prisma.dailyDrop.deleteMany({
@@ -589,9 +581,11 @@ async function cleanupOldDailyDrops() {
 // @access  Public (for development debugging)
 router.get('/debug', async (req, res) => {
   try {
-    const now = getJakartaNow();
-    const today = getJakartaToday();
-    const tomorrow = getJakartaTomorrow();
+    const now = new Date();
+    const today = new Date();
+    today.setHours(0, 0, 0, 0); // Start of day
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1); // Next day
 
     // Get all daily drops with detailed date info
     const allDrops = await prisma.dailyDrop.findMany({
@@ -608,26 +602,26 @@ router.get('/debug', async (req, res) => {
 
     const debugInfo = {
       serverTime: {
-        jakartaNow: formatJakartaDate(now),
-        jakartaToday: formatJakartaDate(today),
-        jakartaTomorrow: formatJakartaDate(tomorrow),
+        now: now.toISOString(),
+        today: today.toISOString(),
+        tomorrow: tomorrow.toISOString(),
         systemTime: new Date().toISOString(),
-        timezone: process.env.TZ || 'Not set'
+        timezone: process.env.TZ || 'System default'
       },
       searchRange: {
         from: today.toISOString(),
         to: tomorrow.toISOString(),
-        fromJakarta: formatJakartaDate(today),
-        toJakarta: formatJakartaDate(tomorrow)
+        fromSystem: today.toString(),
+        toSystem: tomorrow.toString()
       },
       dailyDrops: allDrops.map(drop => ({
         id: drop.id,
         track: drop.trackName,
         artist: drop.artistName,
         dateStored: drop.date.toISOString(),
-        dateJakarta: formatJakartaDate(drop.date),
+        dateSystem: drop.date.toString(),
         dateOnly: drop.date.toISOString().split('T')[0],
-        isToday: isDateMatchJakarta(drop.date, today),
+        isToday: drop.date.toISOString().split('T')[0] === today.toISOString().split('T')[0],
         inRange: drop.date >= today && drop.date < tomorrow,
         createdAt: drop.createdAt.toISOString()
       })),

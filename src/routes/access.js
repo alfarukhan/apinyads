@@ -9,7 +9,7 @@ const { successResponse, errorResponse } = require('../lib/response-formatters')
 const { prisma } = require('../lib/prisma');
 
 // ✅ TIMEZONE: Use Jakarta timezone for consistent date handling
-const { getJakartaNow, toJakartaTime } = require('../utils/timezone-helper');
+// ✅ REMOVED: Timezone helper - use system default time
 
 // ✅ ENTERPRISE: Use centralized user selectors
 const { accessUserSelect, transferUserSelect } = require('../lib/user-selectors');
@@ -30,7 +30,7 @@ const generateQRCode = () => {
 // @access  Private
 router.get('/', authMiddleware, asyncHandler(async (req, res) => {
   const { status, eventId, includeExpired = 'false' } = req.query;
-  const now = getJakartaNow();
+  const now = new Date();
 
   let where = {
     userId: req.user.id,
@@ -87,8 +87,8 @@ router.get('/', authMiddleware, asyncHandler(async (req, res) => {
 
   // Add status indicators for frontend
   const enhancedTickets = accessTickets.map(ticket => {
-    const eventStarted = toJakartaTime(ticket.event.startDate) < now;
-    const eventEnded = ticket.event.endDate ? toJakartaTime(ticket.event.endDate) < now : eventStarted;
+    const eventStarted = ticket.event.startDate < now;
+    const eventEnded = ticket.event.endDate ? ticket.event.endDate < now : eventStarted;
     
     return {
       ...ticket,
@@ -184,7 +184,7 @@ router.post('/transfer', authMiddleware, asyncHandler(async (req, res) => {
   }
 
   // Check if event is in the future
-  if (toJakartaTime(accessTicket.event.date) < getJakartaNow()) {
+  if (accessTicket.event.date < new Date()) {
     throw new AppError('Cannot transfer access for past events', 400);
   }
 
@@ -298,7 +298,7 @@ requireEventOwnershipOrAdmin(resource, req.user, 'perform this action');
     throw new AppError('Access ticket already used', 400);
   }
 
-  if (getJakartaNow() > toJakartaTime(accessTicket.validUntil)) {
+  if (new Date() > accessTicket.validUntil) {
     throw new AppError('Access ticket has expired', 400);
   }
 
@@ -306,7 +306,7 @@ requireEventOwnershipOrAdmin(resource, req.user, 'perform this action');
     where: { id },
     data: {
       isUsed: true,
-      usedAt: getJakartaNow(),
+      usedAt: new Date(),
     }
   });
 
@@ -355,7 +355,7 @@ router.get('/qr/:qrCode', authMiddleware, asyncHandler(async (req, res) => {
   // ✅ ENTERPRISE: Use centralized authorization utilities
 requireEventOwnershipOrAdmin(resource, req.user, 'perform this action');
 
-  const isValid = !accessTicket.isUsed && getJakartaNow() <= toJakartaTime(accessTicket.validUntil);
+  const isValid = !accessTicket.isUsed && new Date() <= accessTicket.validUntil;
 
   res.json({
     success: true,
@@ -363,7 +363,7 @@ requireEventOwnershipOrAdmin(resource, req.user, 'perform this action');
       accessTicket,
       isValid,
       status: accessTicket.isUsed ? 'used' : 
-              getJakartaNow() > toJakartaTime(accessTicket.validUntil) ? 'expired' : 'valid'
+              new Date() > accessTicket.validUntil ? 'expired' : 'valid'
     }
   });
 }));
