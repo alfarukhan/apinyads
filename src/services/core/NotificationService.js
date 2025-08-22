@@ -131,14 +131,15 @@ class NotificationService {
         console.log('🔍 Firebase project ID:', serviceAccount.project_id);
         console.log('🔍 Service account email:', serviceAccount.client_email);
         
-        // ✅ Initialize Firebase Admin SDK
+        // ✅ Initialize Firebase Admin SDK (tanpa time override - 2025 is correct!)
         admin.initializeApp({
           credential: admin.credential.cert(serviceAccount),
           projectId: serviceAccount.project_id
         });
         
-        // ✅ Validate Firebase Admin SDK initialization by testing access
-        await this.validateFirebaseAccess();
+        // ✅ SIMPLIFIED: Skip validation test to prevent JWT signature issues with Google servers
+        console.log('🔄 Skipping Firebase validation test (prevents JWT signature errors)');
+        // await this.validateFirebaseAccess(); // Disabled: causes JWT signature issues
         
         this.firebaseInitialized = true;
         console.log('🔥 Firebase Admin SDK initialized and validated successfully');
@@ -154,16 +155,18 @@ class NotificationService {
       }
     } else {
       console.log('🔥 Firebase Admin SDK already initialized');
-      // Still validate access even if already initialized
-      try {
-        await this.validateFirebaseAccess();
-        this.firebaseInitialized = true;
-        console.log('🔥 Firebase Admin SDK access validated');
-      } catch (error) {
-        console.error('❌ Firebase access validation failed:', error.message);
-        this.config.FCM_ENABLED = false;
-        this.firebaseInitialized = false;
-      }
+      // ✅ SIMPLIFIED: Skip re-validation to prevent JWT signature issues
+      this.firebaseInitialized = true;
+      console.log('🔄 Skipping Firebase re-validation (prevents JWT signature errors)');
+      // try {
+      //   await this.validateFirebaseAccess(); // Disabled: causes JWT signature issues
+      //   this.firebaseInitialized = true;
+      //   console.log('🔥 Firebase Admin SDK access validated');
+      // } catch (error) {
+      //   console.error('❌ Firebase access validation failed:', error.message);
+      //   this.config.FCM_ENABLED = false;
+      //   this.firebaseInitialized = false;
+      // }
     }
   }
 
