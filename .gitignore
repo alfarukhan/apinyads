@@ -18,3 +18,7 @@ Thumbs.db
 
 # prisma
 prisma/migrations/
+
+# firebase credentials
+config/*firebase*.json
+*.json
