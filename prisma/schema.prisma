@@ -1,0 +1,1402 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  // Basic Identity
+  id          String   @id @default(cuid())
+  email       String   @unique
+  username    String   @unique
+  password    String
+  
+  // Personal Information
+  firstName   String?
+  lastName    String?
+  phone       String?
+  avatar      String?
+  bio         String?
+  
+  // Location
+  city        String?
+  country     String?
+  
+  // Demographics
+  dateOfBirth DateTime?
+  gender      Gender?
+  
+  // App Data
+  favoriteGenres String[]
+  points      Int      @default(0)
+  
+  // Transfer Configuration
+  transferQuota  Int      @default(10) // Monthly transfer quota
+  
+  // Push Notifications
+  fcmTokens   String[]  @default([])
+  
+  // Verification Status
+  isEmailVerified Boolean  @default(false)
+  isPhoneVerified Boolean  @default(false)
+  isVerified  Boolean  @default(false)  // Blue checkmark for verified account
+  isActive    Boolean  @default(true)
+  
+  // Status System
+  status         UserStatus @default(ACTIVE)
+  suspendedUntil DateTime?  // For temporary bans/suspensions
+  banReason      String?    // Reason for ban/suspension
+  
+  // System
+  role        UserRole @default(USER)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  events           Event[]
+  communities      Community[]
+  communityMembers CommunityMember[]
+  notifications    Notification[]
+  bookings         Booking[]
+  accessTickets    Access[]
+  transferLimits   UserTransferLimit[]
+  transfersFrom    AccessTransfer[] @relation("TransferFrom")
+  transfersTo      AccessTransfer[] @relation("TransferTo")
+  posts            Post[]
+  comments         Comment[]
+  likes            Like[]
+  follows          Follow[] @relation("UserFollows")
+  followers        Follow[] @relation("UserFollowers")
+  eventRegistrations EventRegistration[]
+  guestListEntries GuestList[]
+  messages         Message[]
+  chatRooms        ChatRoom[] @relation("ChatRoomMembers")
+  chatActivities   UserChatActivity[]
+  chatTopics       ChatTopic[]
+  votes            Vote[]
+  challengeProgress ChallengeProgress[]
+  rewardRedemptions RewardRedemption[]
+  paymentHistory   PaymentHistory[]
+  dailyDrops       DailyDrop[] @relation("DailyDropArtist")
+  newsLikes        UserNewsLike[]
+  newsComments     NewsComment[]
+  paymentIntents   PaymentIntent[]     // 🔒 Security: Payment intent relations
+  stockReservations StockReservation[] // 🎫 Security: Stock reservation relations
+  postReports     PostReport[]
+  
+  // Event Favorites
+  eventFavorites  UserEventFavorite[]
+  
+  // Artist Favorites (love)
+  artistFavorites UserArtistFavorite[]
+  
+  // Artist Profile (for users with ARTIST role)
+  artistProfile   Artist?
+
+  @@map("users")
+}
+
+model Artist {
+  id             String   @id @default(cuid())
+  name           String
+  description    String?
+  imageUrl       String?
+  genres         String[]
+  country        String?
+  city           String?
+  socialLinks    Json?    // {spotify, instagram, twitter, etc}
+  isVerified     Boolean  @default(false)
+  followersCount Int      @default(0)
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  // User Link (for users with ARTIST role)
+  user           User?    @relation(fields: [userId], references: [id])
+  userId         String?  @unique // One-to-one relationship with User
+
+  // Relations
+  events         EventArtist[]
+  shows          ArtistShow[]
+  
+  // User Favorites (love)
+  userFavorites  UserArtistFavorite[]
+
+  // Label relationship
+  label          Label?   @relation(fields: [labelId], references: [id])
+  labelId        String?
+
+  @@map("artists")
+}
+
+model Venue {
+  id             String   @id @default(cuid())
+  name           String
+  description    String?
+  imageUrl       String?
+  location       String
+  address        String?
+  latitude       Decimal? @db.Decimal(10, 6)
+  longitude      Decimal? @db.Decimal(10, 6)
+  phone          String?
+  website        String?
+  email          String?
+  operatingHours Json?    // {monday: "10:00-22:00", etc}
+  amenities      String[]
+  capacity       Int?
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  // Relations
+  events         Event[]
+
+  @@map("venues")
+}
+
+model Event {
+  id          String    @id @default(cuid())
+  title       String
+  description String?
+  imageUrl    String?
+  location    String
+  address     String?
+  latitude    Decimal? @db.Decimal(10, 6)
+  longitude   Decimal? @db.Decimal(10, 6)
+  startDate   DateTime
+  endDate     DateTime?
+  startTime   String?
+  endTime     String?
+  price       Int?      // in rupiah
+  currency    String    @default("IDR")
+  capacity    Int?
+  genres      String[]
+  category    String?
+  hasGuestlist Boolean  @default(false)
+  isPublic    Boolean   @default(true)
+  status      EventStatus @default(DRAFT)
+  isActive    Boolean   @default(true)
+  
+  // Tax Configuration (configurable per event/club)
+  taxRate     Float?    @default(0.0) // Tax percentage (e.g., 0.1 = 10%)
+  taxType     String?   @default("PERCENTAGE") // PERCENTAGE or FIXED
+  taxName     String?   @default("Tax") // Custom tax name (e.g., "VAT", "Service Tax")
+  
+  // Guestlist Configuration
+  guestlistCapacity        Int?     // Maximum guestlist capacity (null = unlimited)
+  guestlistRequiresApproval Boolean @default(false) // Whether guestlist requires admin approval
+  
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  // Relations
+  organizer         User     @relation(fields: [organizerId], references: [id])
+  organizerId       String
+  venue             Venue?   @relation(fields: [venueId], references: [id])
+  venueId           String?
+  artists           EventArtist[]
+  registrations     EventRegistration[]
+  guestLists        GuestList[]
+  posts             Post[]
+  accessTiers       AccessTier[]
+  accessTickets     Access[]
+  bookings          Booking[]
+  paymentHistory    PaymentHistory[]
+  paymentIntents    PaymentIntent[]  // 🔒 Security: Payment intent relations
+  
+  // Featured Tracks (Apple Music) - up to 3 per event
+  featuredTracks    EventFeaturedTrack[]
+  
+  // User Favorites
+  userFavorites     UserEventFavorite[]
+
+  // EO relationship (alternative organizer)
+  eventOrganizer    EO?      @relation(fields: [eoId], references: [id])
+  eoId              String?
+
+  @@map("events")
+}
+
+model EventFeaturedTrack {
+  id           String   @id @default(cuid())
+
+  // Relations
+  event        Event    @relation(fields: [eventId], references: [id])
+  eventId      String
+
+  // Track metadata (Apple Music preferred)
+  title        String
+  artistName   String
+  coverUrl     String?
+  previewUrl   String?
+  externalUrl  String?   // Apple Music trackViewUrl
+  appleTrackId String?
+  durationMs   Int?
+
+  // Ordering within an event (1..3)
+  position     Int      @default(1)
+
+  // Provider hint (e.g., APPLE_MUSIC, SPOTIFY)
+  provider     String   @default("APPLE_MUSIC")
+
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([eventId, position])
+  @@map("event_featured_tracks")
+}
+
+// Platform Configuration for Platform Fees
+model PlatformConfig {
+  id                String   @id @default(cuid())
+  key               String   @unique // e.g., "PLATFORM_FEE", "CURRENCY_RATE"
+  value             String   // Flexible string value
+  description       String?  // Human readable description
+  dataType          String   @default("STRING") // STRING, NUMBER, BOOLEAN, JSON
+  isActive          Boolean  @default(true)
+  updatedBy         String?  // User ID who last updated
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@map("platform_config")
+}
+
+model EventArtist {
+  id       String @id @default(cuid())
+  
+  // Manual artist support
+  name     String  // Artist name (for both manual and existing artists)
+  stageName String? // Stage name for display (optional for both manual and existing artists)
+  imageUrl String? // Profile image URL (optional for manual artists)
+  isManual Boolean @default(false) // True if manually entered, false if from Artist table
+  sortOrder Int    @default(0) // Order in lineup
+  
+  // Relations
+  event    Event   @relation(fields: [eventId], references: [id])
+  eventId  String
+  artist   Artist? @relation(fields: [artistId], references: [id]) // Optional for manual artists
+  artistId String? // Nullable for manual artists
+
+  @@unique([eventId, artistId]) // Only for existing artists
+  @@map("event_artists")
+}
+
+model ArtistShow {
+  id          String   @id @default(cuid())
+  venue       String
+  city        String
+  date        DateTime
+  time        String
+  ticketPrice String?
+  createdAt   DateTime @default(now())
+
+  // Relations
+  artist      Artist   @relation(fields: [artistId], references: [id])
+  artistId    String
+
+  @@map("artist_shows")
+}
+
+model Community {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  imageUrl    String?
+  category    String?
+  city        String?
+  isPrivate   Boolean  @default(false)
+  memberCount Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  admin         User               @relation(fields: [adminId], references: [id])
+  adminId       String
+  members       CommunityMember[]
+  posts         Post[]
+  
+  // Community Group Chat
+  chatRoom      ChatRoom?          @relation(fields: [chatRoomId], references: [id])
+  chatRoomId    String?            @unique
+
+  @@map("communities")
+}
+
+model CommunityMember {
+  id          String   @id @default(cuid())
+  role        MemberRole @default(MEMBER)
+  joinedAt    DateTime @default(now())
+
+  // Relations
+  community   Community @relation(fields: [communityId], references: [id])
+  communityId String
+  user        User      @relation(fields: [userId], references: [id])
+  userId      String
+
+  @@unique([communityId, userId])
+  @@map("community_members")
+}
+
+model Post {
+  id        String   @id @default(cuid())
+  content   String
+  type      PostType @default(TEXT)
+  imageUrl  String?
+  videoUrl  String?
+  locationName String?
+  latitude  Decimal? @db.Decimal(10, 6)
+  longitude Decimal? @db.Decimal(10, 6)
+  musicTrack Json?    // Spotify track info
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  author      User      @relation(fields: [authorId], references: [id])
+  authorId    String
+  community   Community? @relation(fields: [communityId], references: [id])
+  communityId String?
+  event       Event?    @relation(fields: [eventId], references: [id])
+  eventId     String?
+  comments    Comment[]
+  likes       Like[]
+  reports     PostReport[]
+
+  @@map("posts")
+}
+
+enum ReportStatus {
+  PENDING
+  REVIEWED
+  DISMISSED
+}
+
+model PostReport {
+  id          String   @id @default(cuid())
+  reason      String?
+  status      ReportStatus @default(PENDING)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  post        Post     @relation(fields: [postId], references: [id])
+  postId      String
+  reporter    User     @relation(fields: [reporterId], references: [id])
+  reporterId  String
+
+  @@unique([postId, reporterId])
+  @@map("post_reports")
+}
+
+model Comment {
+  id        String   @id @default(cuid())
+  content   String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  parentId  String?  // For reply hierarchy
+
+  // Relations
+  author   User      @relation(fields: [authorId], references: [id])
+  authorId String
+  post     Post      @relation(fields: [postId], references: [id])
+  postId   String
+  parent   Comment?  @relation("CommentReplies", fields: [parentId], references: [id])
+  replies  Comment[] @relation("CommentReplies")
+  likes    Like[]
+
+  @@map("comments")
+}
+
+model Like {
+  id        String   @id @default(cuid())
+  type      LikeType
+  createdAt DateTime @default(now())
+
+  // Relations
+  user      User     @relation(fields: [userId], references: [id])
+  userId    String
+  post      Post?    @relation(fields: [postId], references: [id])
+  postId    String?
+  comment   Comment? @relation(fields: [commentId], references: [id])
+  commentId String?
+
+  @@unique([userId, postId])
+  @@unique([userId, commentId])
+  @@map("likes")
+}
+
+model Follow {
+  id         String   @id @default(cuid())
+  createdAt  DateTime @default(now())
+
+  // Relations
+  follower   User @relation("UserFollowers", fields: [followerId], references: [id])
+  followerId String
+  following  User @relation("UserFollows", fields: [followingId], references: [id])
+  followingId String
+
+  @@unique([followerId, followingId])
+  @@index([followerId])
+  @@index([followingId])
+  @@map("follows")
+}
+
+model EventRegistration {
+  id           String             @id @default(cuid())
+  status       RegistrationStatus @default(PENDING)
+  ticketType   String?
+  quantity     Int                @default(1)
+  totalAmount  Int?               // in rupiah
+  currency     String             @default("IDR")
+  paymentId    String?
+  registeredAt DateTime           @default(now())
+
+  // Relations
+  user    User  @relation(fields: [userId], references: [id])
+  userId  String
+  event   Event @relation(fields: [eventId], references: [id])
+  eventId String
+
+  @@unique([userId, eventId])
+  @@map("event_registrations")
+}
+
+model GuestList {
+  id        String          @id @default(cuid())
+  status    GuestListStatus @default(PENDING)
+  
+  // Approval tracking
+  approvedAt DateTime?
+  rejectedAt DateTime?
+  approvedBy String? // Admin user ID who approved/rejected
+  
+  // Payment tracking (for platform fee)
+  isPaid      Boolean @default(false)
+  paidAt      DateTime?
+  paymentId   String? // Midtrans transaction ID
+  platformFee Int?    // Platform fee amount in rupiah
+  
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
+
+  // Relations
+  user    User  @relation(fields: [userId], references: [id])
+  userId  String
+  event   Event @relation(fields: [eventId], references: [id])
+  eventId String
+
+  @@unique([userId, eventId])
+  @@index([paymentId])
+  @@map("guest_lists")
+}
+
+// Access Tier Configuration for Events
+model AccessTier {
+  id              String   @id @default(cuid())
+  name            String   // Early Bird, Regular, VIP, etc.
+  description     String?
+  price           Int      // in rupiah (IDR)
+  currency        String   @default("IDR")
+  maxQuantity     Int      // Total available
+  soldQuantity    Int      @default(0) // Track sold count
+  availableQuantity Int    // Computed field for remaining stock
+  benefits        String[] // Array of benefits
+  isActive        Boolean  @default(true)
+  
+  // Sale Period
+  saleStartDate   DateTime?
+  saleEndDate     DateTime?
+  
+  // Ordering and priority
+  sortOrder       Int      @default(0)
+  
+  // Optimistic locking for concurrency
+  version         Int      @default(1)
+  
+  // 🎫 Enhanced stock management
+  reservedQuantity Int     @default(0) // Currently reserved but not confirmed tickets
+  
+  // Timestamps
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  // Relations
+  event           Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  eventId         String
+  accessTickets   Access[]
+  bookings        Booking[]
+  paymentIntents  PaymentIntent[]  // 🔒 Security: Payment intent relations
+  stockReservations StockReservation[] // 🎫 Security: Stock reservation relations
+
+  @@unique([eventId, name]) // Ensure unique tier names per event
+  @@map("access_tiers")
+}
+
+// Individual Access Tickets (after successful purchase)
+model Access {
+  id              String       @id @default(cuid())
+  type            AccessType
+  ticketCode      String       @unique
+  qrCode          String?      @unique
+  status          AccessStatus @default(CONFIRMED)
+  currency        String       @default("IDR")
+  price           Int          // Final price paid (in rupiah)
+  venueDetails    String?
+  
+  // Usage tracking
+  isUsed          Boolean      @default(false)
+  usedAt          DateTime?
+  validUntil      DateTime
+  
+  // Transfer tracking (max 5 per day per user)
+  transferLimit   Int          @default(5)
+  transferCount   Int          @default(0)
+  lastTransferAt  DateTime?
+  
+  // Security
+  ipAddress       String?      // Track purchase IP
+  userAgent       String?      // Track purchase device
+  
+  // Timestamps
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  // Relations
+  user            User         @relation(fields: [userId], references: [id])
+  userId          String
+  event           Event        @relation(fields: [eventId], references: [id])
+  eventId         String
+  accessTier      AccessTier?  @relation(fields: [accessTierId], references: [id])
+  accessTierId    String?
+  booking         Booking?     @relation(fields: [bookingId], references: [id])
+  bookingId       String?
+  transferLogs    AccessTransfer[]
+
+  @@map("access_tickets")
+}
+
+// Booking Management (before payment completion)
+model Booking {
+  id              String        @id @default(cuid())
+  bookingCode     String        @unique
+  status          BookingStatus @default(PENDING)
+  
+  // Booking details
+  quantity        Int
+  unitPrice       Int           // Price per ticket (in rupiah)
+  subtotalAmount  Int           // Subtotal: unitPrice * quantity (in rupiah)
+  platformFee     Int           @default(0) // Platform fee (in rupiah) - flat Rp 25,000
+  taxAmount       Int           @default(0) // Tax amount (in rupiah)
+  totalAmount     Int           // Total amount: subtotal + platformFee + taxAmount (in rupiah)
+  currency        String        @default("IDR")
+  
+  // Payment integration
+  paymentId       String?       // Midtrans transaction ID
+  paymentMethod   String?       // DANA, GOPAY, BCA_VA, etc.
+  paymentStatus   PaymentStatus @default(PENDING)
+  paidAt          DateTime?
+  
+  // Expiry (booking expires after 30 minutes)
+  expiresAt       DateTime
+  expiryWarningAt DateTime? // When expiry warning was sent
+  
+  // Security
+  ipAddress       String?
+  userAgent       String?
+  
+  // Rate limiting tracking
+  dailyBookingCount Int         @default(1)
+  
+  // 🔒 Security fields
+  idempotencyKey    String?     // For duplicate prevention
+  paymentIntentId   String?     // Link to payment intent
+  
+  // Timestamps
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  // Relations
+  user            User          @relation(fields: [userId], references: [id])
+  userId          String
+  event           Event         @relation(fields: [eventId], references: [id])
+  eventId         String
+  accessTier      AccessTier    @relation(fields: [accessTierId], references: [id])
+  accessTierId    String
+  accessTickets   Access[]      // Generated after successful payment
+  stockReservations StockReservation[] // 🎫 Security: Related stock reservations
+  paymentIntent   PaymentIntent? @relation(fields: [paymentIntentId], references: [id], onDelete: SetNull) // 🔒 Security: Payment intent relation
+
+  // ✅ PERFORMANCE: Indexes for fast cleanup operations
+  @@index([status])
+  @@index([expiresAt])
+  @@index([status, expiresAt]) // Composite index for cleanup queries
+  @@index([userId])
+  @@index([eventId])
+  @@index([accessTierId])
+  @@map("bookings")
+}
+
+// Transfer Log for Access Tickets
+model AccessTransfer {
+  id              String    @id @default(cuid())
+  
+  // Transfer details
+  fromUserId      String
+  toUserId        String
+  transferDate    DateTime  @default(now())
+  reason          String?
+  
+  // Security tracking
+  ipAddress       String?
+  userAgent       String?
+
+  // Relations
+  access          Access    @relation(fields: [accessId], references: [id])
+  accessId        String
+  fromUser        User      @relation("TransferFrom", fields: [fromUserId], references: [id])
+  toUser          User      @relation("TransferTo", fields: [toUserId], references: [id])
+
+  @@map("access_transfers")
+}
+
+// Daily Transfer Limits per User
+model UserTransferLimit {
+  id              String    @id @default(cuid())
+  userId          String
+  transferDate    DateTime  // Date only (YYYY-MM-DD)
+  transferCount   Int       @default(0)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  // Relations
+  user            User      @relation(fields: [userId], references: [id])
+
+  @@unique([userId, transferDate])
+  @@map("user_transfer_limits")
+}
+
+model PaymentHistory {
+  id              String        @id @default(cuid())
+  transactionId   String?       // External payment ID (Midtrans transaction ID)
+  eventName       String
+  amount          Float         // Total amount (for backward compatibility)
+  
+  // Fee breakdown (new fields)
+  subtotalAmount  Float?        // Subtotal amount
+  platformFee     Float?        // Platform fee amount
+  taxAmount       Float?        // Tax amount
+  
+  currency        String        @default("IDR")
+  status          PaymentStatus
+  paymentMethod   String
+  ticketType      String?
+  imageUrl        String?
+  transactionDate DateTime      @default(now())
+  createdAt       DateTime      @default(now())
+  
+  // Additional fields for Continue Payment
+  bookingCode     String?       // Link to original booking
+  paymentUrl      String?       // Midtrans payment URL for pending payments
+  eventId         String?       // Event ID for retry payment
+
+  // Relations
+  user    User   @relation(fields: [userId], references: [id])
+  userId  String
+  event   Event? @relation(fields: [eventId], references: [id])
+
+  @@index([transactionId])
+  @@map("payment_history")
+}
+
+model Notification {
+  id         String   @id @default(cuid())
+  type       String   // PAYMENT_SUCCESS, PAYMENT_FAILED, BOOKING_EXPIRY_WARNING, etc.
+  title      String
+  body       String
+  imageUrl   String?
+  actionData Json?    // Additional data for handling actions
+  isRead     Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  
+  // Relations
+  user       User     @relation(fields: [userId], references: [id])
+  userId     String
+  
+  @@map("notifications")
+}
+
+model Poll {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  icon        String?
+  maxVotes    Int      @default(1)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  items       PollItem[]
+
+  @@map("polls")
+}
+
+model PollItem {
+  id          String @id @default(cuid())
+  name        String
+  imageUrl    String?
+  description String?
+  voteCount   Int    @default(0)
+
+  // Relations
+  poll        Poll   @relation(fields: [pollId], references: [id])
+  pollId      String
+  votes       Vote[]
+
+  @@map("poll_items")
+}
+
+model Vote {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+
+  // Relations
+  user       User     @relation(fields: [userId], references: [id])
+  userId     String
+  pollItem   PollItem @relation(fields: [pollItemId], references: [id])
+  pollItemId String
+
+  @@unique([userId, pollItemId])
+  @@map("votes")
+}
+
+model Challenge {
+  id             String          @id @default(cuid())
+  title          String
+  description    String
+  type           ChallengeType
+  status         ChallengeStatus @default(ACTIVE)
+  targetValue    Int
+  rewardPoints   Int
+  imageUrl       String?
+  startDate      DateTime
+  endDate        DateTime
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  // Relations
+  progress       ChallengeProgress[]
+
+  @@map("challenges")
+}
+
+model ChallengeProgress {
+  id              String @id @default(cuid())
+  currentProgress Int    @default(0)
+  isCompleted     Boolean @default(false)
+  completedAt     DateTime?
+
+  // Relations
+  user          User      @relation(fields: [userId], references: [id])
+  userId        String
+  challenge     Challenge @relation(fields: [challengeId], references: [id])
+  challengeId   String
+
+  @@unique([userId, challengeId])
+  @@map("challenge_progress")
+}
+
+model Reward {
+  id          String     @id @default(cuid())
+  title       String
+  description String
+  type        RewardType
+  pointsCost  Int
+  imageUrl    String?
+  isAvailable Boolean    @default(true)
+  expiryDate  DateTime?
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  // Relations
+  redemptions RewardRedemption[]
+
+  @@map("rewards")
+}
+
+model RewardRedemption {
+  id          String    @id @default(cuid())
+  redeemCode  String?   @unique
+  isRedeemed  Boolean   @default(false)
+  redeemedAt  DateTime?
+  createdAt   DateTime  @default(now())
+
+  // Relations
+  user        User      @relation(fields: [userId], references: [id])
+  userId      String
+  reward      Reward    @relation(fields: [rewardId], references: [id])
+  rewardId    String
+
+  @@map("reward_redemptions")
+}
+
+model News {
+  id            String        @id @default(cuid())
+  title         String
+  slug          String        @unique // SEO-friendly URL slug
+  summary       String?
+  content       String
+  imageUrl      String?
+  author        String
+  category      String
+  tags          String[]
+  readTime      Int           // in minutes
+  likesCount    Int           @default(0)
+  commentsCount Int           @default(0)
+  publishedDate DateTime
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  // Relations
+  comments      NewsComment[]
+  userLikes     UserNewsLike[]
+
+  @@map("news")
+}
+
+model NewsComment {
+  id        String   @id @default(cuid())
+  author    String   // Keep for backward compatibility
+  content   String
+  createdAt DateTime @default(now())
+  
+  // User relation for avatar and proper user data
+  userId    String?  // Optional for existing comments
+  user      User?    @relation(fields: [userId], references: [id])
+
+  // Relations
+  news      News     @relation(fields: [newsId], references: [id])
+  newsId    String
+
+  @@map("news_comments")
+}
+
+model UserNewsLike {
+  id        String   @id @default(cuid())
+  userId    String
+  newsId    String
+  createdAt DateTime @default(now())
+
+  // Relations
+  user      User     @relation(fields: [userId], references: [id])
+  news      News     @relation(fields: [newsId], references: [id])
+
+  @@unique([userId, newsId])
+  @@map("user_news_likes")
+}
+
+model DailyDrop {
+  id              String    @id @default(cuid())
+  artistName      String
+  artistImageUrl  String?
+  trackName       String
+  albumImageUrl   String?
+  previewUrl      String?
+  spotifyUrl      String?
+  spotifyTrackId  String?
+  durationMs      Int       @default(30000)
+  
+  // Playlist information
+  playlistId      String?
+  playlistName    String?
+  playlistUrl     String?
+  playlistImageUrl String?
+  
+  date            DateTime  @db.Date
+  isActive        Boolean   @default(true)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  // Relations
+  artist          User?     @relation("DailyDropArtist", fields: [artistId], references: [id])
+  artistId        String?
+
+  @@map("daily_drops")
+}
+
+model Label {
+  id           String   @id @default(cuid())
+  name         String
+  logoUrl      String?
+  city         String?
+  about        String?
+  verified     Boolean  @default(false)
+  foundedYear  Int?
+  artistsCount Int      @default(0)
+  genres       String[]
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  // Relations
+  artists      Artist[]
+
+  @@map("labels")
+}
+
+model EO {
+  id        String   @id @default(cuid())
+  name      String
+  photoUrl  String?
+  city      String?
+  about     String?
+  verified  Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  events    Event[]
+
+  @@map("event_organizers")
+}
+
+model ChatRoom {
+  id        String      @id @default(cuid())
+  name      String?
+  type      ChatType    @default(DIRECT)
+  isActive  Boolean     @default(true)
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+
+  // Relations
+  members   User[]      @relation("ChatRoomMembers")
+  messages  Message[]
+  userActivities UserChatActivity[]
+  
+  // Community Group Chat
+  community Community?
+  topics    ChatTopic[]
+
+  @@map("chat_rooms")
+}
+
+model Message {
+  id        String      @id @default(cuid())
+  content   String
+  type      MessageType @default(TEXT)
+  status    MessageStatus @default(DELIVERED)
+  isRead    Boolean     @default(false)
+  isDeleted Boolean     @default(false)
+  createdAt DateTime    @default(now())
+
+  // Reply functionality
+  replyToId String?
+  replyTo   Message? @relation("MessageReplies", fields: [replyToId], references: [id])
+  replies   Message[] @relation("MessageReplies")
+
+  // Relations
+  sender     User     @relation(fields: [senderId], references: [id])
+  senderId   String
+  chatRoom   ChatRoom @relation(fields: [chatRoomId], references: [id])
+  chatRoomId String
+  
+  // Topic-based messaging for community group chats
+  topic      ChatTopic? @relation(fields: [topicId], references: [id])
+  topicId    String?
+
+  // Indexes for performance
+  @@index([chatRoomId])
+  @@index([senderId])
+  @@index([createdAt])
+  @@index([replyToId])
+  @@index([topicId])
+  @@map("messages")
+}
+
+model UserChatActivity {
+  id         String   @id @default(cuid())
+  userId     String
+  chatRoomId String
+  lastReadAt DateTime @default(now())
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  // Relations
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  chatRoom ChatRoom @relation(fields: [chatRoomId], references: [id], onDelete: Cascade)
+
+  // Each user can only have one activity record per chat room
+  @@unique([userId, chatRoomId])
+  @@index([userId])
+  @@index([chatRoomId]) 
+  @@index([lastReadAt])
+  @@map("user_chat_activities")
+}
+
+model ChatTopic {
+  id          String   @id @default(cuid())
+  title       String
+  description String?
+  iconEmoji   String?
+  isLocked    Boolean  @default(false)
+  isPinned    Boolean  @default(false)
+  messageCount Int     @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  chatRoom    ChatRoom @relation(fields: [chatRoomId], references: [id], onDelete: Cascade)
+  chatRoomId  String
+  createdBy   User     @relation(fields: [createdById], references: [id])
+  createdById String
+  messages    Message[]
+
+  // Indexes for performance
+  @@index([chatRoomId])
+  @@index([createdById])
+  @@map("chat_topics")
+}
+
+
+
+// Enums
+enum UserRole {
+  USER
+  ADMIN
+  ORGANIZER
+  ARTIST
+  LABEL
+  MODERATOR
+}
+
+enum UserStatus {
+  ACTIVE
+  BANNED
+  SUSPENDED
+  INACTIVE
+  TEMPORARY_BANNED
+}
+
+enum MemberRole {
+  MEMBER
+  MODERATOR
+  ADMIN
+}
+
+enum PostType {
+  TEXT
+  PHOTO
+  VIDEO
+  LOCATION
+  MUSIC
+}
+
+enum LikeType {
+  POST
+  COMMENT
+}
+
+enum RegistrationStatus {
+  PENDING
+  CONFIRMED
+  CANCELLED
+  COMPLETED
+}
+
+enum GuestListStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum AccessType {
+  TICKET
+  RSVP
+  VIP
+  GUEST_LIST
+}
+
+enum AccessStatus {
+  CONFIRMED
+  PENDING
+  CANCELLED
+}
+
+enum PaymentStatus {
+  PENDING
+  SUCCESS
+  FAILED
+  CANCELLED
+  EXPIRED
+}
+
+enum BookingStatus {
+  PENDING
+  CONFIRMED
+  CANCELLED
+  EXPIRED
+  PROCESSING
+}
+
+enum ChallengeType {
+  DAILY
+  WEEKLY
+  MONTHLY
+  SPECIAL
+}
+
+enum ChallengeStatus {
+  ACTIVE
+  COMPLETED
+  EXPIRED
+}
+
+enum RewardType {
+  BADGE
+  POINTS
+  VOUCHER
+  MERCHANDISE
+}
+
+enum ChatType {
+  DIRECT
+  GROUP
+  SUPPORT
+}
+
+enum MessageType {
+  TEXT
+  IMAGE
+  VOICE
+  SYSTEM
+}
+
+enum MessageStatus {
+  SENT
+  DELIVERED
+  READ
+}
+
+enum NotificationType {
+  EVENT_REMINDER
+  NEW_FOLLOWER
+  POST_LIKE
+  COMMENT
+  GUEST_LIST_UPDATE
+  REGISTRATION_CONFIRMED
+  CHAT_MESSAGE
+  SYSTEM
+}
+
+enum EventStatus {
+  DRAFT
+  PUBLISHED
+  CANCELLED
+  COMPLETED
+  POSTPONED
+}
+
+enum Gender {
+  MALE
+  FEMALE
+  OTHER
+  PREFER_NOT_TO_SAY
+}
+
+// ✅ AUDIT LOG MODEL - For centralized audit logging
+model AuditLog {
+  id              String    @id @default(cuid())
+  eventType       String    // Event type identifier
+  category        String    // Event category (AUTH, PAYMENT, etc.)
+  level           String    // Log level (INFO, WARN, ERROR, CRITICAL)
+  description     String    // Human-readable description
+  timestamp       DateTime  @default(now())
+  eventId         String    @unique // Unique event identifier
+  
+  // Session & User context
+  sessionId       String?
+  userId          String?
+  ipAddress       String?
+  userAgent       String?
+  correlationId   String?
+  
+  // Resource context
+  resourceType    String?
+  resourceId      String?
+  action          String?
+  
+  // Change tracking
+  oldValues       Json?     // Previous state
+  newValues       Json?     // New state
+  
+  // Context & metadata
+  metadata        Json      @default("{}")
+  tags            String[]  @default([])
+  
+  // Request context
+  requestId       String?
+  endpoint        String?
+  method          String?
+  statusCode      Int?
+  responseTime    Int?
+  
+  // Security context
+  riskLevel       String    @default("LOW")
+  fraudScore      Float?
+  
+  // Integrity verification
+  integrity       String?   // Hash for tamper detection
+  
+  createdAt       DateTime  @default(now())
+
+  @@map("audit_logs")
+  @@index([timestamp])
+  @@index([createdAt]) // ✅ PERFORMANCE: For audit log rotation queries
+  @@index([userId])
+  @@index([eventType])
+  @@index([category])
+  @@index([level])
+  @@index([correlationId])
+  @@index([createdAt, category]) // ✅ PERFORMANCE: Composite index for rotation by category
+}
+
+// 🔒 PAYMENT INTENT SECURITY TABLE
+// Prevents double-spending and payment race conditions
+model PaymentIntent {
+  id               String    @id @default(cuid())
+  userId           String
+  eventId          String
+  accessTierId     String
+  quantity         Int
+  idempotencyKey   String    @unique
+  status           String    @default("PENDING") // PENDING, PROCESSING, COMPLETED, FAILED, CANCELLED
+  paymentId        String?
+  lockKey          String
+  expiresAt        DateTime
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  // Relations
+  user        User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  event       Event      @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  accessTier  AccessTier @relation(fields: [accessTierId], references: [id], onDelete: Cascade)
+  stockReservations StockReservation[] // 🎫 Security: Related stock reservations
+  bookings    Booking[]  // 🔒 Security: Related bookings
+  
+  // Indexes for performance
+  @@index([userId, eventId])
+  @@index([status])
+  @@index([expiresAt])
+  @@index([lockKey])
+  
+  @@map("payment_intents")
+}
+
+// 🔐 PAYMENT LOCK TABLE
+// Distributed locking for payment processing
+model PaymentLock {
+  id               Int       @id @default(autoincrement())
+  lockKey          String    @unique
+  idempotencyKey   String
+  acquiredAt       DateTime  @default(now())
+  expiresAt        DateTime
+  
+  @@index([expiresAt])
+  @@map("payment_locks")
+}
+
+// 🎫 STOCK RESERVATION TABLE
+// Temporary stock holds with TTL
+model StockReservation {
+  id               String    @id @default(cuid())
+  accessTierId     String
+  userId           String
+  quantity         Int
+  reservedAt       DateTime  @default(now())
+  expiresAt        DateTime
+  status           String    @default("RESERVED") // RESERVED, CONFIRMED, CANCELLED
+  bookingId        String?
+  paymentIntentId  String?
+  confirmedAt      DateTime?
+  cancelledAt      DateTime?
+  cancelReason     String?
+
+  // Relations
+  accessTier    AccessTier     @relation(fields: [accessTierId], references: [id], onDelete: Cascade)
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  booking       Booking?       @relation(fields: [bookingId], references: [id], onDelete: SetNull)
+  paymentIntent PaymentIntent? @relation(fields: [paymentIntentId], references: [id], onDelete: SetNull)
+  
+  // Indexes
+  @@index([accessTierId])
+  @@index([userId])
+  @@index([expiresAt])
+  @@index([status])
+  
+  @@map("stock_reservations")
+}
+
+// 🔔 WEBHOOK LOG TABLE
+// Webhook deduplication and audit trail
+model WebhookLog {
+  id                String    @id @default(cuid())
+  webhookId         String    @unique
+  orderId           String
+  transactionStatus String
+  payload           String    // JSON payload
+  processedAt       DateTime  @default(now())
+  
+  @@index([orderId])
+  @@index([processedAt])
+  @@map("webhook_logs")
+}
+
+// Add missing relations to PaymentIntent model
+// stockReservations StockReservation[]
+
+// Add missing relations to Event model  
+// paymentIntents    PaymentIntent[]
+
+// User Event Favorites - untuk fitur love/favorite events
+model UserEventFavorite {
+  id        String   @id @default(cuid())
+  
+  // Relations
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    String
+  event     Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  eventId   String
+  
+  // Timestamps
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  // Unique constraint - user can only favorite an event once
+  @@unique([userId, eventId])
+  @@map("user_event_favorites")
+}
+
+// User Artist Favorites - untuk fitur love/favorite artists
+model UserArtistFavorite {
+  id        String   @id @default(cuid())
+  
+  // Relations
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    String
+  artist    Artist   @relation(fields: [artistId], references: [id], onDelete: Cascade)
+  artistId  String
+  
+  // Timestamps
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  // Unique constraint - user can only favorite an artist once
+  @@unique([userId, artistId])
+  @@map("user_artist_favorites")
+} 
