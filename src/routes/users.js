@@ -586,9 +586,15 @@ router.get('/:id',
     stats: await calculateUserStats(user.id, user._count)
   };
 
+  // ✅ Apply timestamp localization to fix dateOfBirth parsing issue
+  const { localizeTimestamps } = require('../utils/time-helpers');
+  
+  // ✅ Apply timestamp localization to convert all dates to strings (including dateOfBirth)
+  const localizedUser = localizeTimestamps(transformedUser);
+  
   res.json({
     success: true,
-    data: transformedUser
+    data: localizedUser
   });
 }));
 

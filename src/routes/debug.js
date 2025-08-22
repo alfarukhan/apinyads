@@ -17,17 +17,20 @@ router.get('/mobile-detection', (req, res) => {
     const origin = req.get('origin') || '';
     const appPlatform = req.get('X-App-Platform') || '';
     
-    // Same detection logic as middleware
-    const isMobileApp = userAgent.includes('DanceSignal') || 
-                       userAgent.includes('Flutter') ||
-                       userAgent.includes('Dart/') ||
-                       userAgent.includes('okhttp') ||
-                       userAgent.includes('CFNetwork') ||
-                       clientType === 'mobile' ||
-                       origin === 'capacitor://localhost' ||
-                       origin === 'ionic://localhost' ||
-                       origin === 'file://' ||
-                       !origin;
+    // Updated detection logic to match globalApiProtection
+    const validMobileIdentifiers = [
+      'DanceSignal', 'Flutter', 'Dart', 'okhttp', 'Mobile', 'Android',
+      'iPhone', 'iPad', 'iOS', 'CFNetwork', 'Darwin', 'Mozilla/5.0',
+      'Dalvik', 'Apache-HttpClient', 'java/', 'expo'
+    ];
+    
+    const isMobileApp = validMobileIdentifiers.some(identifier => 
+      userAgent.includes(identifier)
+    ) || clientType === 'mobile' ||
+        origin === 'capacitor://localhost' ||
+        origin === 'ionic://localhost' ||
+        origin === 'file://' ||
+        !origin;
 
     const debug = {
       detection: {

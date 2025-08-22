@@ -6,8 +6,6 @@ const { getNotificationService } = require('../services/core');
 // ✅ ENTERPRISE: Use centralized singleton instead of new instance
 const { prisma } = require('../lib/prisma');
 
-// ✅ REMOVED: Timezone helper - use system default time
-
 // ✅ ENTERPRISE: Use centralized validation schemas
 const { eventCreateSchema, eventUpdateSchema, paginationSchema, eventSearchSchema } = require('../lib/validation-schemas');
 
@@ -928,7 +926,7 @@ router.get('/:id/stats', authMiddleware, asyncHandler(async (req, res) => {
   // Calculate peak sales hour
   const salesByHour = {};
   recentSales.forEach(sale => {
-    const hour = sale.createdAt.getHours();
+    const hour = new Date(sale.createdAt).getHours();
     salesByHour[hour] = (salesByHour[hour] || 0) + 1;
   });
   
@@ -2161,7 +2159,7 @@ router.get('/guest-list/payment-status/:paymentId', authMiddleware, asyncHandler
     message: 'This guestlist payment endpoint is deprecated. Please use the universal payment endpoint instead.',
     deprecated: true,
     redirect: `/api/payments/status/${paymentId}`,
-    timestamp: new Date().toISOString() // Keep ISO format for API response timestamp
+    timestamp: new Date().toISOString()
   });
 }));
 

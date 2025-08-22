@@ -7,9 +7,6 @@ const morgan = require('morgan');
 const rateLimit = require('express-rate-limit');
 require('dotenv').config();
 
-// ✅ REMOVED: Jakarta timezone setting - causes JWT conflicts with Firebase UTC validation
-// Server will use default UTC time to prevent JWT signature mismatches
-
 // Fix MaxListeners warning
 process.setMaxListeners(20);
 
@@ -22,21 +19,14 @@ const originalLog = console.log;
 const originalError = console.error;
 const originalWarn = console.warn;
 
-const getTimestamp = () => new Date().toLocaleString('en-US', { 
-  hour12: false, 
-  year: 'numeric',
-  month: '2-digit', 
-  day: '2-digit',
-  hour: '2-digit', 
-  minute: '2-digit', 
-  second: '2-digit'
-});
+const getTimestamp = () => {
+  const now = new Date();
+  return now.toString();
+};
 
 console.log = (...args) => originalLog(`[${getTimestamp()}]`, ...args);
 console.error = (...args) => originalError(`[${getTimestamp()}]`, ...args);  
 console.warn = (...args) => originalWarn(`[${getTimestamp()}]`, ...args);
-
-// ✅ REMOVED: Timezone helper import - causes Firebase JWT validation issues
 
 // ✅ ENTERPRISE: Use centralized singleton instead of new instance
 const { prisma } = require('./lib/prisma');
@@ -236,7 +226,7 @@ const corsOptions = {
     
     // Allow requests with no origin (mobile apps, Postman, etc.)
     if (!origin) {
-      console.log('✅ CORS: No origin - allowing');
+      console.log('✅ CORS: No origin - allowing (mobile app/Postman)');
       return callback(null, true);
     }
     
@@ -285,7 +275,12 @@ const corsOptions = {
     'Origin',
     'Cache-Control',
     'X-CSRF-Token',
-    'X-Access-Token'  // Additional auth header support
+    'X-Access-Token',  // Additional auth header support
+    'X-API-Key',       // API key header
+    'X-Client-Type',   // Mobile client identification
+    'User-Agent',      // Mobile user agent
+    'X-Platform',      // Platform identification
+    'X-App-Version'    // App version header
   ],
   exposedHeaders: ['Authorization', 'X-Total-Count'],
   optionsSuccessStatus: 200,
@@ -371,7 +366,7 @@ console.log('🌐 Global throttling middleware enabled for all API routes');
 // Enhanced debug middleware for development
 if (NODE_ENV === 'development') {
   app.use((req, res, next) => {
-    const timestamp = new Date().toISOString();
+    const timestamp = new Date().toISOString(); // Using server time directly
     console.log(`\n🔍 ${timestamp}`);
     console.log(`📡 ${req.method} ${req.path}`);
     console.log(`🌐 Origin: ${req.get('origin') || 'None'}`);
@@ -562,7 +557,7 @@ const gracefulShutdown = async (signal) => {
       // Notify all connected users about server shutdown
       chatService.io.emit('server_shutdown', {
         message: 'Server is shutting down. Please reconnect in a moment.',
-        timestamp: new Date().toISOString()
+        timestamp: new Date()
       });
       
       // Close all socket connections
@@ -598,8 +593,7 @@ process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 server.listen(PORT, '0.0.0.0', async () => {
   console.log(`🚀 DanceSignal API Server running on port ${PORT}`);
   console.log(`📊 Environment: ${process.env.NODE_ENV}`);
-  console.log(`🕐 Server started at: ${new Date().toLocaleString()}`);
-  console.log(`⏰ Server time: ${new Date().toString()}`);
+  console.log(`🕐 Server started at: ${new Date().toString()}`);
   console.log(`🔗 API Base URL: http://localhost:${PORT}/api`);
   console.log(`📱 Mobile access: http://10.0.2.2:${PORT}/api (Android emulator)`);
   console.log(`🌐 Real device: http://192.168.100.169:${PORT}/api`);

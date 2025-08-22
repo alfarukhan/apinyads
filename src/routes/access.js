@@ -8,9 +8,6 @@ const { successResponse, errorResponse } = require('../lib/response-formatters')
 // ✅ ENTERPRISE: Use centralized singleton instead of new instance
 const { prisma } = require('../lib/prisma');
 
-// ✅ TIMEZONE: Use Jakarta timezone for consistent date handling
-// ✅ REMOVED: Timezone helper - use system default time
-
 // ✅ ENTERPRISE: Use centralized user selectors
 const { accessUserSelect, transferUserSelect } = require('../lib/user-selectors');
 
@@ -97,16 +94,23 @@ router.get('/', authMiddleware, asyncHandler(async (req, res) => {
     };
   });
 
-  // ✅ ENTERPRISE: Use standardized response format
+  // ✅ ENTERPRISE: Use standardized response format with timestamp localization
+  const { localizeTimestamps } = require('../utils/time-helpers');
+  
+  const responseData = { 
+    accessTickets: enhancedTickets,
+    meta: {
+      total: enhancedTickets.length,
+      hiddenExpired: includeExpired !== 'true'
+    }
+  };
+  
+  // ✅ Apply timestamp localization to convert all dates to strings
+  const localizedResponse = localizeTimestamps(responseData);
+  
   res.json(successResponse(
     'Access tickets retrieved successfully',
-    { 
-      accessTickets: enhancedTickets,
-      meta: {
-        total: enhancedTickets.length,
-        hiddenExpired: includeExpired !== 'true'
-      }
-    }
+    localizedResponse
   ));
 }));
 
@@ -142,10 +146,17 @@ router.get('/:id', authMiddleware, asyncHandler(async (req, res) => {
     throw new AppError('Access ticket not found', 404);
   }
 
-  // ✅ ENTERPRISE: Use standardized response format
+  // ✅ ENTERPRISE: Use standardized response format with timestamp localization  
+  const { localizeTimestamps } = require('../utils/time-helpers');
+  
+  const responseData = { accessTicket };
+  
+  // ✅ Apply timestamp localization to convert all dates to strings
+  const localizedResponse = localizeTimestamps(responseData);
+  
   res.json(successResponse(
     'Access ticket retrieved successfully',
-    { accessTicket }
+    localizedResponse
   ));
 }));
 
@@ -423,7 +434,10 @@ router.get('/all', authMiddleware, asyncHandler(async (req, res) => {
     prisma.access.count({ where })
   ]);
 
-  res.json({
+  // ✅ Apply timestamp localization for admin endpoint too
+  const { localizeTimestamps } = require('../utils/time-helpers');
+  
+  const responseData = {
     success: true,
     data: accessTickets,
     pagination: {
@@ -432,7 +446,12 @@ router.get('/all', authMiddleware, asyncHandler(async (req, res) => {
       total,
       pages: Math.ceil(total / limit)
     }
-  });
+  };
+  
+  // ✅ Apply timestamp localization to convert all dates to strings
+  const localizedResponse = localizeTimestamps(responseData);
+  
+  res.json(localizedResponse);
 }));
 
 // @route   GET /api/access/event/:eventId

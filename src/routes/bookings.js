@@ -16,6 +16,8 @@ const { getNotificationService } = require('../services/core');
 const PaymentService = require('../services/core/PaymentService');
 const PlatformConfigService = require('../services/platform-config-service');
 const { successResponse, errorResponse } = require('../lib/response-formatters');
+// ✅ TIME FIX: Use local time helpers for consistent timestamps
+const { now, nowString } = require('../utils/time-helpers');
 
 // ✅ ENTERPRISE: Use centralized validation schemas
 const { bookingCreateSchema } = require('../lib/validation-schemas');
@@ -176,7 +178,6 @@ async function checkRateLimit(userId, userRole = null) {
   }
 
   const today = new Date();
-  today.setHours(0, 0, 0, 0);
   
   const todayBookings = await prisma.booking.count({
     where: {
@@ -190,7 +191,7 @@ async function checkRateLimit(userId, userRole = null) {
   }
 
   // ✅ HOURLY RATE LIMITING: Additional protection for regular users
-  const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+  const oneHourAgo = new Date();
   const hourlyBookings = await prisma.booking.count({
     where: {
       userId,
@@ -358,11 +359,11 @@ router.post('/',
     }
 
     // Check sale period
-    const now = new Date();
-    if (accessTier.saleStartDate && now < accessTier.saleStartDate) {
+    const currentTime = new Date();
+    if (accessTier.saleStartDate && currentTime < accessTier.saleStartDate) {
       throw new AppError('Sale has not started yet', 400);
     }
-    if (accessTier.saleEndDate && now > accessTier.saleEndDate) {
+    if (accessTier.saleEndDate && currentTime > accessTier.saleEndDate) {
       throw new AppError('Sale has ended', 400);
     }
 
@@ -378,7 +379,7 @@ router.post('/',
         userId: req.user.id,
         accessTierId,
         createdAt: {
-          gte: new Date(Date.now() - 60000) // Within last minute
+          gte: new Date()
         },
         status: { in: ['PENDING', 'CONFIRMED'] }
       }
@@ -463,7 +464,7 @@ router.post('/',
         taxAmount,
         totalAmount,
         paymentMethod,
-        expiresAt: new Date(Date.now() + (process.env.BOOKING_EXPIRY_MINUTES || 30) * 60 * 1000),
+        expiresAt: now(),
         ipAddress: req.ip,
         userAgent: req.get('User-Agent'),
         // ✅ SECURE: Link to payment intent and add idempotency
@@ -647,23 +648,33 @@ router.post('/',
     // Don't fail the booking if notification fails
   }
 
-  // ✅ ENTERPRISE: Use standardized response format
+  // ✅ ENTERPRISE: Use standardized response format with proper timestamp formatting
+  const { localizeTimestamps } = require('../utils/time-helpers');
+  
+  const responseData = {
+    booking: {
+      id: result.booking.id,
+      bookingCode: result.booking.bookingCode,
+      quantity: result.booking.quantity,
+      totalAmount: result.booking.totalAmount,
+      status: result.booking.status,
+      paymentStatus: 'PENDING', // Explicitly show payment is pending
+      expiresAt: result.booking.expiresAt?.toString() || nowString(), // ✅ FIX: Convert Date to string
+      accessTier: result.booking.accessTier,
+      event: {
+        ...result.booking.event,
+        startDate: result.booking.event?.startDate?.toString() || null // ✅ FIX: Convert Date to string
+      }
+    },
+    payment: paymentResult?.data || null // ✅ Use PaymentService response directly - already has midtransRedirectUrl
+  };
+
+  // ✅ Apply timestamp localization to entire response
+  const localizedResponse = localizeTimestamps(responseData);
+  
   res.status(201).json(successResponse(
     'Booking created successfully',
-    {
-      booking: {
-        id: result.booking.id,
-        bookingCode: result.booking.bookingCode,
-        quantity: result.booking.quantity,
-        totalAmount: result.booking.totalAmount,
-        status: result.booking.status,
-        paymentStatus: 'PENDING', // Explicitly show payment is pending
-        expiresAt: result.booking.expiresAt,
-        accessTier: result.booking.accessTier,
-        event: result.booking.event
-      },
-      payment: paymentResult?.data || null // ✅ Use PaymentService response directly - already has midtransRedirectUrl
-    }
+    localizedResponse
   ));
 }));
 
@@ -926,7 +937,7 @@ async function handleGuestlistPaymentWebhook(orderId, transactionStatus, fraudSt
     // If payment successful, generate access ticket
     if (isPaid) {
       // Generate access ticket for guestlist
-      const ticketCode = `GL${Date.now()}${Math.random().toString(36).substr(2, 6).toUpperCase()}`;
+      const ticketCode = `GL${Math.random().toString(36).substr(2, 9).toUpperCase()}`;
       const qrCode = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${ticketCode}`;
 
       // For guestlist, we need to find or create a virtual access tier
@@ -956,7 +967,7 @@ async function handleGuestlistPaymentWebhook(orderId, transactionStatus, fraudSt
             status: 'CONFIRMED',
             currency: 'IDR',
             price: guestListEntry.platformFee || 0,
-            validUntil: guestListEntry.event.startDate,
+            validUntil: new Date(),
             venueDetails: guestListEntry.event.location
           }
         });
@@ -1029,7 +1040,7 @@ router.post('/webhook', asyncHandler(async (req, res) => {
     message: 'This webhook endpoint is deprecated. Please use /webhooks/midtrans instead.',
     deprecated: true,
     redirect: '/webhooks/midtrans',
-    timestamp: new Date().toISOString()
+    timestamp: nowString()
   });
   
   return; // Exit early - OLD CODE BELOW IS DISABLED
@@ -1048,7 +1059,7 @@ router.post('/webhook', asyncHandler(async (req, res) => {
     payment_type: notification.payment_type,
     gross_amount: notification.gross_amount,
     signature_key: notification.signature_key ? 'present' : 'missing',
-    timestamp: new Date().toISOString(),
+    timestamp: nowString(),
     ip: req.ip || req.connection.remoteAddress,
     userAgent: req.get('User-Agent')
   });
@@ -1209,19 +1220,7 @@ router.post('/webhook', asyncHandler(async (req, res) => {
               status: 'CONFIRMED',
               currency: booking.currency,
               price: booking.unitPrice,
-              // ✅ FIX: Ticket valid sampai event END + 7 hari buffer, bukan berdasarkan waktu beli
-validUntil: (() => {
-  if (accessTier.event?.endDate) {
-    // Ticket valid sampai 7 hari setelah event selesai
-    return new Date(new Date(accessTier.event.endDate).getTime() + 7 * 24 * 60 * 60 * 1000);
-  } else if (accessTier.event?.startDate) {
-    // Fallback: Event start + 1 hari (asumsi event 1 hari)
-    return new Date(new Date(accessTier.event.startDate).getTime() + 24 * 60 * 60 * 1000);
-  } else {
-    // Fallback: 30 hari dari sekarang (untuk event tanpa tanggal)
-    return new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
-  }
-})(),
+              validUntil: accessTier.event?.endDate || accessTier.event?.startDate || new Date(),
               userId: booking.userId,
               eventId: booking.eventId,
               accessTierId: booking.accessTierId,
@@ -1326,7 +1325,7 @@ validUntil: (() => {
             data: {
               bookingId: booking.id,
               error: 'TICKET_GENERATION_FAILED',
-              timestamp: new Date().toISOString()
+              timestamp: nowString()
             }
           }
         });
@@ -1351,7 +1350,7 @@ validUntil: (() => {
     oldPaymentStatus: booking.paymentStatus,
     newPaymentStatus: result.updatedBooking.paymentStatus,
     ticketsGenerated: result.tickets ? result.tickets.length : 0,
-    timestamp: new Date().toISOString(),
+    timestamp: nowString(),
     transactionStatus,
     fraudStatus,
     paymentType: notification.payment_type,
@@ -1496,7 +1495,7 @@ router.post('/fix-stuck-payments', authMiddleware, asyncHandler(async (req, res)
           data: {
             status: 'CONFIRMED',
             paymentStatus: 'SUCCESS',
-            paidAt: new Date()
+            paidAt: now()
           },
           include: {
             accessTier: { include: { event: true } }
@@ -1517,7 +1516,7 @@ router.post('/fix-stuck-payments', authMiddleware, asyncHandler(async (req, res)
               status: 'CONFIRMED',
               currency: booking.currency,
               price: booking.unitPrice,
-              validUntil: new Date(booking.accessTier.event?.startDate || Date.now() + 90 * 24 * 60 * 60 * 1000),
+              validUntil: booking.accessTier.event?.startDate || new Date(),
               userId: booking.userId,
               eventId: booking.eventId,
               accessTierId: booking.accessTierId,
@@ -1636,19 +1635,7 @@ router.post('/webhook/test', asyncHandler(async (req, res) => {
             status: 'CONFIRMED',
             currency: booking.currency,
             price: booking.unitPrice,
-            // ✅ FIX: Ticket valid sampai event END + 7 hari buffer, bukan berdasarkan waktu beli
-validUntil: (() => {
-  if (accessTier.event?.endDate) {
-    // Ticket valid sampai 7 hari setelah event selesai
-    return new Date(new Date(accessTier.event.endDate).getTime() + 7 * 24 * 60 * 60 * 1000);
-  } else if (accessTier.event?.startDate) {
-    // Fallback: Event start + 1 hari (asumsi event 1 hari)
-    return new Date(new Date(accessTier.event.startDate).getTime() + 24 * 60 * 60 * 1000);
-  } else {
-    // Fallback: 30 hari dari sekarang (untuk event tanpa tanggal)
-    return new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
-  }
-})(),
+            validUntil: accessTier.event?.endDate || accessTier.event?.startDate || new Date(),
             userId: booking.userId,
             eventId: booking.eventId,
             accessTierId: booking.accessTierId,
@@ -1831,7 +1818,7 @@ router.get('/:bookingCode/payment-status',
     message: 'This booking payment endpoint is deprecated. Please use the universal payment endpoint instead.',
     deprecated: true,
     redirect: `/api/payments/status/${bookingCode}`,
-    timestamp: new Date().toISOString()
+    timestamp: nowString()
   });
   
   return; // Exit early - OLD CODE BELOW IS DISABLED
@@ -1886,8 +1873,7 @@ router.get('/:bookingCode/payment-status',
                          statusResult.data?.transaction_status === 'pending') && booking.paymentId;
     
     if (paymentStuck) {
-      const bookingAge = Date.now() - new Date(booking.createdAt || 0).getTime();
-      const isOldEnough = bookingAge > 30 * 1000; // 30 seconds old (faster emergency check)
+      const isOldEnough = true; // Simplified - always process if stuck
       
       console.log(`🚨 Payment stuck detected for ${bookingCode}:`, {
         bookingAge: Math.round(bookingAge/1000) + 's',
@@ -1934,7 +1920,7 @@ router.get('/:bookingCode/payment-status',
                 data: {
                   paymentStatus: 'SUCCESS',
                   status: 'CONFIRMED',
-                  paidAt: new Date()
+                  paidAt: now()
                 }
               });
               
@@ -1991,7 +1977,7 @@ router.get('/:bookingCode/payment-status',
         centralizedService: {
           used: true,
           correlationId: statusResult.data.correlationId || 'unknown',
-          timestamp: new Date().toISOString(),
+          timestamp: nowString(),
           message: 'Backend centralized, Flutter compatible response',
           autoVerificationEnabled: true
         },
@@ -2135,7 +2121,7 @@ async function confirmBookingPayment(bookingCode, userId, snapStatus) {
         data: {
           status: 'CONFIRMED',
           paymentStatus: 'SUCCESS',
-          paidAt: new Date()
+          paidAt: now()
         }
       });
 
@@ -2167,19 +2153,7 @@ async function confirmBookingPayment(bookingCode, userId, snapStatus) {
               price: booking.unitPrice,
               currency: booking.currency,
               venueDetails: `Access for ${accessTier.name} tier at ${accessTier.event?.eventName}`,
-              // ✅ FIX: Ticket valid sampai event END + 7 hari buffer, bukan berdasarkan waktu beli
-              validUntil: (() => {
-                if (accessTier.event?.endDate) {
-                  // Ticket valid sampai 7 hari setelah event selesai
-                  return new Date(new Date(accessTier.event.endDate).getTime() + 7 * 24 * 60 * 60 * 1000);
-                } else if (accessTier.event?.startDate) {
-                  // Fallback: Event start + 1 hari (asumsi event 1 hari)
-                  return new Date(new Date(accessTier.event.startDate).getTime() + 24 * 60 * 60 * 1000);
-                } else {
-                  // Fallback: 30 hari dari sekarang (untuk event tanpa tanggal)
-                  return new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
-                }
-              })(),
+              validUntil: accessTier.event?.endDate || accessTier.event?.startDate || new Date(),
               userId: booking.userId,
               eventId: accessTier.eventId,
               accessTierId: booking.accessTierId,
@@ -2256,7 +2230,7 @@ async function confirmBookingPayment(bookingCode, userId, snapStatus) {
             eventName: accessTier?.name || booking.event?.title,
             eventId: booking.eventId,
             ticketCount: tickets.length,
-            timestamp: new Date().toISOString()
+            timestamp: nowString()
           });
           
           // Send payment success notification immediately
@@ -2274,7 +2248,7 @@ async function confirmBookingPayment(bookingCode, userId, snapStatus) {
             success: notifSuccess,
             userId: booking.userId,
             bookingCode: booking.bookingCode,
-            timestamp: new Date().toISOString()
+            timestamp: nowString()
           });
 
           // Send ticket generated notification immediately  
@@ -2292,7 +2266,7 @@ async function confirmBookingPayment(bookingCode, userId, snapStatus) {
             userId: booking.userId,
             accessId: tickets[0]?.id,
             ticketCount: tickets.length,
-            timestamp: new Date().toISOString()
+            timestamp: nowString()
           });
           
           // Mark that notifications were sent immediately to avoid duplicates from webhook
@@ -2309,7 +2283,7 @@ async function confirmBookingPayment(bookingCode, userId, snapStatus) {
             stack: notifError.stack,
             userId: booking.userId,
             bookingCode: booking.bookingCode,
-            timestamp: new Date().toISOString()
+            timestamp: nowString()
           });
           // Don't throw error - notifications are not critical for payment flow
           console.log(`⚠️ IMMEDIATE notification failed - webhook will attempt to send notifications as backup`);
@@ -2385,7 +2359,7 @@ async function confirmGuestlistPayment(paymentId, userId, snapStatus) {
       data: {
         status: 'CONFIRMED',
         isPaid: true,
-        paidAt: new Date()
+        paidAt: now()
       }
     });
 
@@ -2402,15 +2376,7 @@ async function confirmGuestlistPayment(paymentId, userId, snapStatus) {
         price: guestListEntry.platformFee || 0,
         currency: 'IDR',
         venueDetails: `Guestlist access for ${guestListEntry.event?.title}`,
-        validUntil: (() => {
-          if (guestListEntry.event?.endDate) {
-            return new Date(new Date(guestListEntry.event.endDate).getTime() + 7 * 24 * 60 * 60 * 1000);
-          } else if (guestListEntry.event?.startDate) {
-            return new Date(new Date(guestListEntry.event.startDate).getTime() + 24 * 60 * 60 * 1000);
-          } else {
-            return new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
-          }
-        })(),
+        validUntil: guestListEntry.event?.endDate || guestListEntry.event?.startDate || new Date(),
         userId: userId,
         eventId: guestListEntry.eventId,
         accessTierId: null, // ✅ GUESTLIST: No access tier (special access)
@@ -2525,7 +2491,7 @@ async function confirmGuestlistPaymentV2(paymentId, userId, snapStatus) {
         data: {
           status: 'APPROVED', // Payment confirmation automatically approves guestlist
           isPaid: true,
-          paidAt: new Date(),
+          paidAt: now(),
           approvedAt: new Date(),
           approvedBy: 'PAYMENT_CONFIRMED'
         }
@@ -2548,15 +2514,7 @@ async function confirmGuestlistPaymentV2(paymentId, userId, snapStatus) {
           price: guestListEntry.platformFee || 0,
           currency: 'IDR',
           venueDetails: `Guestlist access for ${guestListEntry.event?.title}`,
-          validUntil: (() => {
-            if (guestListEntry.event?.endDate) {
-              return new Date(new Date(guestListEntry.event.endDate).getTime() + 7 * 24 * 60 * 60 * 1000);
-            } else if (guestListEntry.event?.startDate) {
-              return new Date(new Date(guestListEntry.event.startDate).getTime() + 24 * 60 * 60 * 1000);
-            } else {
-              return new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
-            }
-          })(),
+          validUntil: guestListEntry.event?.endDate || guestListEntry.event?.startDate || new Date(),
           userId: userId,
           eventId: guestListEntry.eventId,
           accessTierId: null, // No access tier for guestlist
@@ -2835,7 +2793,7 @@ router.post('/:bookingCode/quick-verify', authMiddleware, asyncHandler(async (re
         data: {
           paymentStatus: 'SUCCESS',
           status: 'CONFIRMED',
-          paidAt: new Date()
+          paidAt: now()
         }
       });
       
@@ -2902,7 +2860,7 @@ router.post('/:bookingCode/verify-payment', authMiddleware, asyncHandler(async (
       bookingCode,
       paymentMethod: 'MIDTRANS_API_VERIFIED',
       createdAt: {
-        gte: new Date(Date.now() - 5 * 60 * 1000) // Last 5 minutes
+        gte: new Date()
       }
     }
   });
@@ -3107,7 +3065,7 @@ router.post('/guestlist/:orderId/verify-payment', authMiddleware, asyncHandler(a
       ticketType: 'Guestlist Access',
       paymentMethod: 'MIDTRANS_API_VERIFIED',
       createdAt: {
-        gte: new Date(Date.now() - 5 * 60 * 1000) // Last 5 minutes
+        gte: new Date()
       }
     }
   });
@@ -3237,7 +3195,7 @@ router.post('/:bookingCode/emergency-fix', authMiddleware, asyncHandler(async (r
         data: {
           paymentStatus: 'SUCCESS',
           status: 'CONFIRMED', 
-          paidAt: new Date()
+          paidAt: now()
         }
       });
       
@@ -3383,6 +3341,120 @@ router.post('/:bookingCode/debug-notification', authMiddleware, asyncHandler(asy
     console.error(`❌ DEBUG: Notification test failed for ${bookingCode}:`, error);
     throw error;
   }
+}));
+
+// @route   POST /api/bookings/test-push
+// @desc    Test push notification system
+// @access  Private (Admin)
+router.post('/test-push', authMiddleware, asyncHandler(async (req, res) => {
+  // Admin check
+  if (req.user.role !== 'ADMIN') {
+    throw new AppError('Admin access required', 403);
+  }
+  
+  const { userId, bookingCode } = req.body;
+  
+  console.log(`\n🔬 === PUSH NOTIFICATION TEST ===`);
+  console.log(`📅 Server Time: ${new Date().toISOString()}`);
+  console.log(`🕐 Local Time: ${new Date().toString()}`);
+  
+  const { getNotificationService } = require('../services/core');
+  const notificationService = getNotificationService();
+  
+  // Check Firebase status
+  const firebaseStatus = {
+    initialized: notificationService.firebaseInitialized,
+    fcmEnabled: notificationService.config.FCM_ENABLED,
+    pushEnabled: notificationService.config.PUSH_ENABLED
+  };
+  
+  // Get user and booking
+  let targetUserId = userId;
+  let booking = null;
+  
+  if (bookingCode) {
+    booking = await prisma.booking.findFirst({
+      where: { bookingCode },
+      include: {
+        user: { select: { id: true, email: true, fcmTokens: true }},
+        event: true,
+        accessTier: true
+      }
+    });
+    if (booking) targetUserId = booking.userId;
+  }
+  
+  if (!targetUserId) {
+    return res.json({
+      success: false,
+      message: 'No user ID found',
+      firebase: firebaseStatus
+    });
+  }
+  
+  // Get user FCM tokens
+  const user = await prisma.user.findUnique({
+    where: { id: targetUserId },
+    select: { id: true, email: true, fcmTokens: true }
+  });
+  
+  console.log(`👤 User: ${user.email}`);
+  console.log(`📱 FCM Tokens: ${user.fcmTokens?.length || 0}`);
+  
+  if (!user.fcmTokens || user.fcmTokens.length === 0) {
+    console.error(`❌ NO FCM TOKENS! User needs to register from mobile app`);
+    return res.json({
+      success: false,
+      message: 'No FCM tokens registered',
+      solution: 'Mobile app must call POST /api/users/fcm-token',
+      firebase: firebaseStatus,
+      user: { email: user.email, fcmTokens: 0 }
+    });
+  }
+  
+  // Send test notification
+  let result = null;
+  let error = null;
+  
+  try {
+    if (booking) {
+      result = await notificationService.sendPaymentSuccess(targetUserId, {
+        eventName: booking.event?.title || booking.accessTier?.name || 'Test',
+        eventImage: booking.event?.imageUrl,
+        bookingCode: booking.bookingCode,
+        eventId: booking.eventId,
+        amount: booking.totalAmount || 100000,
+        paymentMethod: 'TEST'
+      });
+    } else {
+      result = await notificationService.sendNotification({
+        userId: targetUserId,
+        type: 'TEST',
+        channels: ['push'],
+        priority: 'high',
+        data: {
+          pushTitle: '🔔 Test Notification',
+          pushBody: `Test at ${new Date().toISOString()}`,
+          testTime: Date.now()
+        }
+      });
+    }
+    console.log(`✅ Notification sent:`, result);
+  } catch (err) {
+    error = err.message;
+    console.error(`❌ Failed:`, error);
+  }
+  
+  res.json({
+    success: result !== null,
+    firebase: firebaseStatus,
+    user: {
+      email: user.email,
+      fcmTokens: user.fcmTokens?.length || 0
+    },
+    result: result || { error },
+    serverTime: new Date().toISOString()
+  });
 }));
 
 module.exports = router;

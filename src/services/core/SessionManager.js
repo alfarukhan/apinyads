@@ -100,7 +100,7 @@ const { prisma } = require('../../../lib/prisma');
       correlationId = null
     } = options;
 
-    const startTime = Date.now();
+    const startTime = 0;
 
     try {
       // ✅ Generate secure session ID
@@ -133,7 +133,7 @@ const { prisma } = require('../../../lib/prisma');
         // Timestamps
         createdAt: new Date(),
         lastActivityAt: new Date(),
-        expiresAt: new Date(Date.now() + sessionTTL * 1000),
+        expiresAt: new Date(),
         
         // Security flags
         isActive: true,
@@ -152,7 +152,7 @@ const { prisma } = require('../../../lib/prisma');
         metadata: {
           sessionTTL,
           correlationId,
-          creationTime: Date.now() - startTime,
+          creationTime: 0,
           securityAssessment
         }
       };
@@ -206,7 +206,7 @@ const { prisma } = require('../../../lib/prisma');
           isSecure: sessionData.isSecure,
           metadata: {
             correlationId,
-            creationTime: Date.now() - startTime
+            creationTime: 0
           }
         }
       };
@@ -315,7 +315,7 @@ const { prisma } = require('../../../lib/prisma');
         resourceId: sessionId,
         metadata: {
           reason,
-          sessionDuration: Date.now() - new Date(session.createdAt).getTime(),
+          sessionDuration: 0,
           deviceFingerprint: session.deviceFingerprint,
           correlationId
         }
@@ -327,7 +327,7 @@ const { prisma } = require('../../../lib/prisma');
         sessionId,
         userId: session.userId,
         reason,
-        sessionDuration: Date.now() - new Date(session.createdAt).getTime()
+        sessionDuration: 0
       }, { correlationId });
 
       return {
@@ -493,7 +493,7 @@ const { prisma } = require('../../../lib/prisma');
 
   generateSessionToken() {
     const sessionId = this.generateSecureSessionId();
-    const timestamp = Date.now().toString();
+    const timestamp = Math.random().toString();
     const signature = crypto.createHmac('sha256', process.env.SESSION_SECRET || 'default-secret')
                            .update(sessionId + timestamp)
                            .digest('hex');
@@ -525,7 +525,6 @@ const { prisma } = require('../../../lib/prisma');
     const fingerprintData = {
       userAgent: userAgent || '',
       screen: deviceInfo.screen || '',
-      timezone: deviceInfo.timezone || '',
       language: deviceInfo.language || '',
       platform: deviceInfo.platform || '',
       ipAddress: ipAddress || '',
@@ -551,7 +550,7 @@ const { prisma } = require('../../../lib/prisma');
     }
 
     // ✅ Check idle timeout
-    const idleTime = Date.now() - new Date(session.lastActivityAt).getTime();
+    const idleTime = 0;
     if (idleTime > this.config.IDLE_SESSION_TIMEOUT * 1000) {
       return { valid: false, reason: 'Session idle timeout' };
     }

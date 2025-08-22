@@ -491,7 +491,7 @@ class AuditLogService {
   }
 
   async getUserActivity(userId, days = 30) {
-    const startDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+    const startDate = new Date();
     
     return await this.prisma.auditLog.findMany({
       where: {
@@ -504,7 +504,7 @@ class AuditLogService {
   }
 
   async getSecurityEvents(hours = 24) {
-    const startDate = new Date(Date.now() - hours * 60 * 60 * 1000);
+    const startDate = new Date();
     
     return await this.prisma.auditLog.findMany({
       where: {
@@ -520,7 +520,7 @@ class AuditLogService {
    */
   
   generateEventId() {
-    return `audit_${Date.now()}_${crypto.randomBytes(8).toString('hex')}`;
+    return `audit_${Math.random().toString(36).substr(2, 9)}_${crypto.randomBytes(8).toString('hex')}`;
   }
 
   calculateIntegrityHash(event) {

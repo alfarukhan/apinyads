@@ -9,8 +9,6 @@ const { prisma } = require('../lib/prisma');
 // ✅ ENTERPRISE: Use centralized user selectors
 const userSelectors = require('../lib/user-selectors');
 
-// ✅ REMOVED: Timezone helper - use system default time
-
 
 // @route   GET /api/daily-drop
 // @desc    Get today's daily drop track OR list daily drops for CMS
@@ -28,41 +26,15 @@ router.get('/', optionalAuth, async (req, res) => {
       return await handleDailyDropsList(req, res);
     }
     
-    // Regular single daily drop request - use UTC window derived from Jakarta calendar date
-    // This ensures DB DATE column comparisons are stable and not shifted
+    // Regular single daily drop request
     const today = new Date();
-    today.setHours(0, 0, 0, 0); // Start of day
-    const tomorrow = new Date(today);
-    tomorrow.setDate(tomorrow.getDate() + 1); // Next day
+    const tomorrow = new Date();
 
-    console.log(`🔍 Looking for daily drop on date: ${today.toISOString().split('T')[0]}`);
-    console.log(`🔍 Server time range: ${today.toString()} to ${tomorrow.toString()}`);
-
-    // Debug: Check what daily drops exist in the database
-    const allDailyDrops = await prisma.dailyDrop.findMany({
-      where: { isActive: true },
-      select: { id: true, trackName: true, artistName: true, date: true },
-      orderBy: { date: 'desc' }
-    });
-    console.log(`📋 All active daily drops in DB:`, allDailyDrops.map(d => ({
-      track: d.trackName,
-      artist: d.artistName, 
-      date: d.date.toISOString().split('T')[0],
-      dateUTC: d.date.toISOString(),
-      dateSystem: d.date.toString()
-    })));
-
-    console.log(`🎯 Looking for daily drop with date range (system time):`);
-    console.log(`   From: ${today.toISOString()}`);
-    console.log(`   To: ${tomorrow.toISOString()}`);
+    console.log(`🔍 Looking for daily drop on date: ${today.toString()}`);
 
     // Check if there's a daily drop configured for today
     let dailyDrop = await prisma.dailyDrop.findFirst({
       where: {
-        date: {
-          gte: today,
-          lt: tomorrow
-        },
         isActive: true
       },
       include: {
@@ -80,7 +52,7 @@ router.get('/', optionalAuth, async (req, res) => {
 
     // Only return daily drop for today - no fallback to latest
     if (!dailyDrop) {
-      console.log(`❌ No daily drop found for ${today.toISOString().split('T')[0]}`);
+      console.log(`❌ No daily drop found for today`);
       return res.json({
         success: true,
         data: null,
@@ -88,8 +60,7 @@ router.get('/', optionalAuth, async (req, res) => {
       });
     }
 
-    console.log(`✅ Found daily drop for ${today.toISOString().split('T')[0]}: ${dailyDrop.trackName} by ${dailyDrop.artistName}`);
-    console.log(`📅 Daily drop date in DB: ${dailyDrop.date.toISOString()}`);
+    console.log(`✅ Found daily drop: ${dailyDrop.trackName} by ${dailyDrop.artistName}`);
 
     // Format response
     const response = {
@@ -160,10 +131,7 @@ router.post('/', authMiddleware, async (req, res) => {
       });
     }
 
-    // ✅ TIMEZONE: Accept 'YYYY-MM-DD' then convert to UTC midnight for that Jakarta calendar date
-    const dropDate = date ? new Date(date + 'T00:00:00.000Z') : new Date();
-    
-    console.log(`💾 Saving daily drop with date: ${dropDate.toISOString()}`);
+    const dropDate = date ? new Date(date) : new Date();
 
     // Check if daily drop already exists for this date
     const existingDrop = await prisma.dailyDrop.findFirst({
@@ -303,7 +271,7 @@ router.put('/:id', authMiddleware, async (req, res) => {
         playlistName,
         playlistUrl,
         playlistImageUrl,
-        date: date ? createJakartaDate(date) : undefined,
+        date: date ? new Date(date) : undefined,
         isActive: isActive !== undefined ? isActive : true,
         artistId
       }
@@ -474,13 +442,9 @@ async function handleDailyDropsList(req, res) {
     }
     
     if (date) {
-      const searchDate = new Date(date + 'T00:00:00.000Z');
-      const nextDay = new Date(searchDate.getTime() + 24 * 60 * 60 * 1000);
+      const searchDate = new Date(date);
       
-      where.date = {
-        gte: searchDate,
-        lt: nextDay
-      };
+      where.date = searchDate;
     }
 
     const [dailyDrops, total] = await Promise.all([
@@ -556,7 +520,6 @@ async function handleDailyDropsList(req, res) {
 async function cleanupOldDailyDrops() {
   try {
     const today = new Date();
-    today.setHours(0, 0, 0, 0); // Start of day
 
     // Delete daily drops that are older than today (past their featured date)
     const deletedCount = await prisma.dailyDrop.deleteMany({
@@ -575,76 +538,5 @@ async function cleanupOldDailyDrops() {
     // Don't throw error, just log it to avoid breaking the main request
   }
 }
-
-// @route   GET /api/daily-drop/debug
-// @desc    Debug daily drop timezone and date handling
-// @access  Public (for development debugging)
-router.get('/debug', async (req, res) => {
-  try {
-    const now = new Date();
-    const today = new Date();
-    today.setHours(0, 0, 0, 0); // Start of day
-    const tomorrow = new Date(today);
-    tomorrow.setDate(tomorrow.getDate() + 1); // Next day
-
-    // Get all daily drops with detailed date info
-    const allDrops = await prisma.dailyDrop.findMany({
-      where: { isActive: true },
-      select: { 
-        id: true, 
-        trackName: true, 
-        artistName: true, 
-        date: true,
-        createdAt: true
-      },
-      orderBy: { date: 'desc' }
-    });
-
-    const debugInfo = {
-      serverTime: {
-        now: now.toISOString(),
-        today: today.toISOString(),
-        tomorrow: tomorrow.toISOString(),
-        systemTime: new Date().toISOString(),
-        timezone: process.env.TZ || 'System default'
-      },
-      searchRange: {
-        from: today.toISOString(),
-        to: tomorrow.toISOString(),
-        fromSystem: today.toString(),
-        toSystem: tomorrow.toString()
-      },
-      dailyDrops: allDrops.map(drop => ({
-        id: drop.id,
-        track: drop.trackName,
-        artist: drop.artistName,
-        dateStored: drop.date.toISOString(),
-        dateSystem: drop.date.toString(),
-        dateOnly: drop.date.toISOString().split('T')[0],
-        isToday: drop.date.toISOString().split('T')[0] === today.toISOString().split('T')[0],
-        inRange: drop.date >= today && drop.date < tomorrow,
-        createdAt: drop.createdAt.toISOString()
-      })),
-      explanation: {
-        issue: "Daily drop returns latest instead of today's drop",
-        cause: "Timezone mismatch between stored dates and query dates",
-        solution: "Ensure both storage and query use consistent Jakarta timezone"
-      }
-    };
-
-    res.json({
-      success: true,
-      debug: debugInfo
-    });
-
-  } catch (error) {
-    console.error('Debug Daily Drop Error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Debug failed',
-      error: error.message
-    });
-  }
-});
 
 module.exports = router;

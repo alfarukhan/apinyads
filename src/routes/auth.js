@@ -240,10 +240,18 @@ router.get('/me', authMiddleware, asyncHandler(async (req, res) => {
 
 
   // ✅ FIX: Send user and stats as separate objects for frontend
-  res.json(successResponse('User profile retrieved successfully', {
+  // ✅ Apply timestamp localization to fix dateOfBirth parsing issue
+  const { localizeTimestamps } = require('../utils/time-helpers');
+  
+  const responseData = {
     user: user,  // User data without stats
     stats: stats // Stats as separate object
-  }));
+  };
+  
+  // ✅ Apply timestamp localization to convert all dates to strings (including dateOfBirth)
+  const localizedResponse = localizeTimestamps(responseData);
+  
+  res.json(successResponse('User profile retrieved successfully', localizedResponse));
 }));
 
 // @route   PUT /api/auth/profile
@@ -286,10 +294,16 @@ router.put('/profile', authMiddleware, asyncHandler(async (req, res) => {
     }
   });
 
+  // ✅ Apply timestamp localization to fix dateOfBirth parsing issue  
+  const { localizeTimestamps } = require('../utils/time-helpers');
+  
+  const formattedUser = formatUserData(updatedUser);
+  const localizedUser = localizeTimestamps(formattedUser);
+  
   res.json({
     success: true,
     message: 'Profile updated successfully',
-    data: formatUserData(updatedUser)
+    data: localizedUser
   });
 }));
 
@@ -353,15 +367,36 @@ router.post('/change-password', authMiddleware, asyncHandler(async (req, res) =>
 }));
 
 // @route   POST /api/auth/refresh
-// @desc    Refresh JWT token
+// @desc    Refresh JWT token (Enhanced with longer expiry for better UX)
 // @access  Private
 router.post('/refresh', authMiddleware, asyncHandler(async (req, res) => {
+  // Generate new token with fresh 7-day expiry
   const token = generateToken(req.user.id);
+  
+  // Calculate expiry date for frontend
+  const expiryDate = new Date();
+  expiryDate.setDate(expiryDate.getDate() + 7); // 7 days from now
+
+  // ✅ Apply timestamp localization
+  const { localizeTimestamps } = require('../utils/time-helpers');
+  
+  const responseData = {
+    token,
+    expiresAt: expiryDate,
+    expiresIn: 7 * 24 * 60 * 60, // 7 days in seconds
+    user: {
+      id: req.user.id,
+      username: req.user.username,
+      role: req.user.role
+    }
+  };
+  
+  const localizedResponse = localizeTimestamps(responseData);
 
   res.json({
     success: true,
     message: 'Token refreshed successfully',
-    data: { token }
+    data: localizedResponse
   });
 }));
 

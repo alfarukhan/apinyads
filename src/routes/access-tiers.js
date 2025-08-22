@@ -170,13 +170,22 @@ router.get('/event/:eventId',
     };
   });
 
-  res.json({
-    success: true,
-    data: {
-      accessTiers: tiersWithStatus,
-      userQuota
-    }
-  });
+  // ✅ Apply timestamp localization and use standardized response format
+  const { localizeTimestamps } = require('../utils/time-helpers');
+  const { successResponse } = require('../lib/response-formatters');
+  
+  const responseData = {
+    accessTiers: tiersWithStatus,
+    userQuota
+  };
+  
+  // ✅ Apply timestamp localization to convert all dates to strings
+  const localizedResponse = localizeTimestamps(responseData);
+  
+  res.json(successResponse(
+    'Access tiers retrieved successfully',
+    localizedResponse
+  ));
 }));
 
 // @route   POST /api/access-tiers/event/:eventId

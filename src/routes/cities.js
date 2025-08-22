@@ -89,7 +89,6 @@ router.get('/', async (req, res) => {
         imageUrl: getCityImageUrl(name),
         latitude: getCityCoordinates(name).lat,
         longitude: getCityCoordinates(name).lng,
-        timezone: 'Asia/Jakarta', // Default for Indonesia
         isPopular: stats.artistsCount + stats.eventsCount > 3
       }))
       .sort((a, b) => (b.artistsCount + b.eventsCount) - (a.artistsCount + a.eventsCount))

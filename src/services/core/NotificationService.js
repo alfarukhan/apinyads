@@ -488,8 +488,9 @@ class NotificationService {
       console.log(`📱 Found ${fcmTokens.length} FCM tokens for user ${recipient.id}`);
       
       if (fcmTokens.length === 0) {
-        console.log(`⚠️ No FCM tokens found for user ${recipient.id}`);
-        return { success: false, error: 'No FCM tokens found for user' };
+        console.error(`❌ CRITICAL: No FCM tokens found for user ${recipient.id}`);
+        console.error(`❌ Push notification FAILED - User needs to register FCM token from mobile app`);
+        return { success: false, error: 'No FCM tokens found for user - User needs to register FCM token from mobile app' };
       }
 
       // ✅ Get push template
@@ -520,6 +521,9 @@ class NotificationService {
       console.log(`🚀 Sending push notification to ${fcmTokens.length} tokens:`, {
         title: message.notification.title,
         body: message.notification.body,
+        type: type,
+        userId: recipient.id,
+        timestamp: new Date().toISOString(), // Server time
         tokens: fcmTokens.slice(0, 3) // Show first 3 tokens for debugging
       });
       
@@ -1200,6 +1204,16 @@ class NotificationService {
     } = paymentData;
 
     console.log(`🎉 Sending payment success notification to user ${userId} for booking ${bookingCode}`);
+    console.log(`📱 Payment data:`, paymentData);
+    
+    // Check if user has FCM tokens BEFORE trying to send
+    const fcmTokens = await this.getUserFCMTokens(userId);
+    console.log(`🔍 FCM tokens for user ${userId}:`, fcmTokens.length > 0 ? `Found ${fcmTokens.length} tokens` : 'NO TOKENS FOUND!');
+    
+    if (fcmTokens.length === 0) {
+      console.error(`❌ CRITICAL: User ${userId} has no FCM tokens registered! Cannot send push notification`);
+      console.error(`❌ The user needs to register their device FCM token first`);
+    }
 
     return await this.sendNotification({
       userId,

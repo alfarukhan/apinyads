@@ -3,7 +3,11 @@
  * 
  * Enterprise-grade response formatting to ensure consistency
  * across all API endpoints and match Flutter app expectations.
+ * 
+ * ✅ FIXED: Auto-converts all timestamps to local time for mobile apps
  */
+
+const { localizeTimestamps, localizeTimestampsArray, nowString } = require('../utils/time-helpers');
 
 /**
  * Standard success response format
@@ -13,10 +17,21 @@
  * @returns {Object} Formatted response
  */
 const successResponse = (message, data = null, meta = null) => {
+  // ✅ AUTO-LOCALIZE: Convert timestamps to local time for mobile apps
+  let localizedData = data;
+  if (data) {
+    if (Array.isArray(data)) {
+      localizedData = localizeTimestampsArray(data);
+    } else if (typeof data === 'object') {
+      localizedData = localizeTimestamps(data);
+    }
+  }
+
   const response = {
     success: true,
     message,
-    data,
+    data: localizedData,
+    serverTime: nowString() // Always include server time for debugging
   };
 
   if (meta) {
@@ -37,6 +52,7 @@ const errorResponse = (message, errors = null, meta = null) => {
   const response = {
     success: false,
     message,
+    serverTime: nowString() // Always include server time for debugging
   };
 
   if (errors) {

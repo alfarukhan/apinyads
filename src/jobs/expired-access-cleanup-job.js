@@ -1,6 +1,5 @@
 const { PrismaClient } = require('@prisma/client');
 const cron = require('node-cron');
-// ✅ REMOVED: Timezone helper - use system default time
 
 const prisma = new PrismaClient();
 
@@ -16,7 +15,7 @@ const cleanupExpiredAccess = async () => {
     console.log('🧹 Starting expired access cleanup job...');
     
     const now = new Date();
-    const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000); // 24 hours ago
+    const yesterday = new Date();
     
     // Find access tickets for events that ended yesterday or earlier
     // and were never used (user didn't attend)
@@ -103,7 +102,7 @@ const cleanupExpiredAccess = async () => {
         category: 'SYSTEM',
         level: 'INFO',
         description: `Cleaned up ${expiredUnusedAccess.length} expired unused access tickets`,
-        eventId: `cleanup_${Date.now()}`,
+        eventId: `cleanup_${Math.random().toString(36).substr(2, 9)}`,
         metadata: {
           cleanedAccessCount: expiredUnusedAccess.length,
           eventStats,
@@ -188,8 +187,6 @@ const scheduleCleanupJob = () => {
   cron.schedule('0 2 * * *', async () => {
     console.log('⏰ Running scheduled expired access cleanup...');
     await cleanupExpiredAccess();
-  }, {
-    timezone: 'Asia/Jakarta' // Adjust to your timezone
   });
 
   // Also run once on startup (optional)

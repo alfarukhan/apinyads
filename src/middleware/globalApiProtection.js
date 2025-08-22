@@ -14,8 +14,29 @@ const globalAPIProtection = (req, res, next) => {
     return next();
   }
   
-  // Skip health checks
-  if (req.path === '/api/health' || req.path.startsWith('/api/security/health')) {
+  // Skip health checks and public endpoints
+  const publicEndpoints = [
+    '/api/health',
+    '/api/security/health',
+    '/api/debug',
+    '/api/events', // Public events listing
+    '/api/artists', // Public artists
+    '/api/venues', // Public venues  
+    '/api/cities', // Public cities
+    '/api/daily-drop', // Public daily drop
+    '/api/auth/login', // Login endpoint
+    '/api/auth/register', // Register endpoint
+    '/api/webhooks', // Webhooks from external services
+    '/api/payments/status', // Payment status check
+    '/api/bookings/webhook' // Midtrans webhooks
+  ];
+  
+  const isPublicEndpoint = publicEndpoints.some(endpoint => 
+    req.path === endpoint || req.path.startsWith(endpoint + '/')
+  );
+  
+  if (isPublicEndpoint) {
+    console.log(`✅ Public endpoint - allowing access to ${req.path}`);
     return next();
   }
   
@@ -28,15 +49,25 @@ const globalAPIProtection = (req, res, next) => {
   
   console.log(`🔍 Global API Protection - Path: ${req.path}, Origin: ${origin}, User-Agent: ${userAgent}`);
   
-  // **DEVELOPMENT MODE** - Allow localhost untuk debugging
+  // **DEVELOPMENT MODE** - Allow localhost AND mobile development
   if (securityConfig.isDevelopment) {
     const isLocalhost = req.ip === '127.0.0.1' || 
                        req.ip === '::1' || 
                        origin?.includes('localhost') || 
                        origin?.includes('127.0.0.1');
     
-    if (isLocalhost) {
-      console.log(`✅ Development mode - allowing localhost access to ${req.path}`);
+    // Also allow development mobile testing (no origin + common mobile patterns)
+    const isDevelopmentMobile = !origin && (
+      userAgent.includes('okhttp') ||
+      userAgent.includes('Dart') ||
+      userAgent.includes('Flutter') ||
+      userAgent.includes('DanceSignal') ||
+      userAgent.includes('Mobile') ||
+      userAgent.includes('Android')
+    );
+    
+    if (isLocalhost || isDevelopmentMobile) {
+      console.log(`✅ Development mode - allowing access to ${req.path} (localhost: ${isLocalhost}, mobile: ${isDevelopmentMobile})`);
       return next();
     }
   }
@@ -82,12 +113,24 @@ const globalAPIProtection = (req, res, next) => {
     }
   }
   
-  // 5. Allow if from valid mobile apps
+  // 5. Allow if from valid mobile apps (EXPANDED PATTERNS)
   const validMobileIdentifiers = [
     'DanceSignal',
     'Flutter',
     'Dart',
-    'okhttp' // Android default HTTP client
+    'okhttp', // Android default HTTP client
+    'Mobile', // Generic mobile pattern
+    'Android', // Android apps
+    'iPhone', // iOS apps
+    'iPad', // iPad apps
+    'iOS', // iOS general
+    'CFNetwork', // iOS network framework
+    'Darwin', // iOS/macOS
+    'Mozilla/5.0', // Some mobile browsers/webviews
+    'Dalvik', // Android runtime
+    'Apache-HttpClient', // Android HTTP client
+    'java/', // Java-based clients
+    'expo' // Expo React Native
   ];
   
   const isValidMobileApp = validMobileIdentifiers.some(identifier => 
