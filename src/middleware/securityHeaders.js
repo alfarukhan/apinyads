@@ -36,14 +36,21 @@ const enhancedSecurityHeaders = (options = {}) => {
           frameSrc: ["'none'"]
         };
 
-        const cspString = Object.entries(cspDirectives)
-          .map(([directive, sources]) => {
-            const kebabCase = directive.replace(/([A-Z])/g, '-$1').toLowerCase();
-            return `${kebabCase} ${sources.join(' ')}`;
-          })
-          .join('; ');
+        try {
+          const cspString = Object.entries(cspDirectives)
+            .map(([directive, sources]) => {
+              const kebabCase = directive.replace(/([A-Z])/g, '-$1').toLowerCase();
+              return `${kebabCase} ${Array.isArray(sources) ? sources.join(' ') : sources}`;
+            })
+            .join('; ');
 
-        res.setHeader('Content-Security-Policy', cspString);
+          // Only set CSP if string is valid
+          if (cspString && cspString.length > 0) {
+            res.setHeader('Content-Security-Policy', cspString);
+          }
+        } catch (cspError) {
+          console.warn('⚠️ CSP header creation failed:', cspError.message);
+        }
         console.log('🛡️ CSP Header set');
       }
 
@@ -75,19 +82,24 @@ const enhancedSecurityHeaders = (options = {}) => {
       // Referrer Policy
       res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
 
-      // Permissions Policy (formerly Feature Policy)
-      const permissionsPolicy = [
-        'geolocation=self',
-        'camera=self',
-        'microphone=self',
-        'payment=self',
-        'accelerometer=self',
-        'gyroscope=self',
-        'magnetometer=self',
-        'usb=none',
-        'bluetooth=none'
-      ].join(', ');
-      res.setHeader('Permissions-Policy', permissionsPolicy);
+      // Permissions Policy (formerly Feature Policy) - only for production
+      if (securityConfig.isProduction) {
+        try {
+          const permissionsPolicy = [
+            'geolocation=(self)',
+            'camera=(self)',
+            'microphone=(self)',
+            'payment=(self)',
+            'accelerometer=(self)',
+            'gyroscope=(self)',
+            'usb=()',
+            'bluetooth=()'
+          ].join(', ');
+          res.setHeader('Permissions-Policy', permissionsPolicy);
+        } catch (permError) {
+          console.warn('⚠️ Permissions Policy header creation failed:', permError.message);
+        }
+      }
 
       // Cross-Origin Policies
       res.setHeader('Cross-Origin-Embedder-Policy', 'unsafe-none'); // More permissive for API
@@ -165,17 +177,37 @@ const mobileAppHeaders = (req, res, next) => {
   const userAgent = req.get('user-agent') || '';
   const isMobileApp = userAgent.includes('DanceSignal') || 
                      userAgent.includes('Flutter') ||
+                     userAgent.includes('Dart/') ||
                      req.get('X-Client-Type') === 'mobile';
 
   if (isMobileApp) {
-    // Mobile-specific headers
-    res.setHeader('X-Mobile-Optimized', 'true');
-    res.setHeader('X-App-Cache-Control', 'max-age=300'); // 5 minutes cache for mobile
-    
-    // Less strict CSP for mobile apps
-    res.setHeader('Content-Security-Policy', "default-src 'self' 'unsafe-inline' 'unsafe-eval' *");
-    
-    console.log('📱 Mobile app headers applied');
+    try {
+      // Mobile-specific headers
+      res.setHeader('X-Mobile-Optimized', 'true');
+      res.setHeader('X-App-Cache-Control', 'max-age=300'); // 5 minutes cache for mobile
+      
+      // More permissive but valid CSP for mobile apps
+      const mobileCsp = [
+        "default-src 'self' 'unsafe-inline' 'unsafe-eval' https: data:",
+        "img-src 'self' data: https: blob:",
+        "connect-src 'self' https: wss:",
+        "media-src 'self' data: https: blob:",
+        "font-src 'self' data: https:",
+        "style-src 'self' 'unsafe-inline' https:",
+        "script-src 'self' 'unsafe-inline' 'unsafe-eval' https:"
+      ].join('; ');
+      
+      res.setHeader('Content-Security-Policy', mobileCsp);
+      
+      // Allow all origins for mobile app (CORS is handled separately)
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS, PATCH');
+      res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept, Origin, Cache-Control');
+      
+      console.log('📱 Mobile app headers applied');
+    } catch (mobileError) {
+      console.warn('⚠️ Mobile headers application failed:', mobileError.message);
+    }
   }
   
   next();

@@ -83,13 +83,27 @@ class SecurityConfig {
       'http://localhost:3012',
       'http://127.0.0.1:3000',
       'http://127.0.0.1:3001',
-      'http://127.0.0.1:3011'
+      'http://127.0.0.1:3011',
+      'capacitor://localhost',
+      'http://localhost',
+      'ionic://localhost',
+      'file://'
     ] : (process.env.ALLOWED_ORIGINS || '').split(',').filter(Boolean);
 
     return {
       origin: (origin, callback) => {
-        // Allow requests with no origin (mobile apps, Postman)
+        // Allow requests with no origin (mobile apps, Postman, native apps)
         if (!origin) return callback(null, true);
+        
+        // Allow capacitor/ionic/file origins for mobile apps
+        if (origin && (
+          origin.startsWith('capacitor://') || 
+          origin.startsWith('ionic://') || 
+          origin.startsWith('file://') ||
+          origin === 'null' // Some mobile webviews send 'null'
+        )) {
+          return callback(null, true);
+        }
         
         // Development mode - allow all localhost
         if (this.isDevelopment && origin.match(/^https?:\/\/(localhost|127\.0\.0\.1):\d+$/)) {
@@ -100,7 +114,13 @@ class SecurityConfig {
         if (allowedOrigins.includes(origin)) {
           callback(null, true);
         } else {
-          callback(new Error(`CORS policy violation: Origin ${origin} not allowed`));
+          // In production, log but don't block mobile apps
+          if (this.isProduction) {
+            console.warn(`⚠️ CORS: Unrecognized origin ${origin}, allowing for mobile compatibility`);
+            callback(null, true);
+          } else {
+            callback(new Error(`CORS policy violation: Origin ${origin} not allowed`));
+          }
         }
       },
       credentials: true,
@@ -129,11 +149,16 @@ class SecurityConfig {
    * 🛡️ Helmet Security Headers Configuration
    */
   getHelmetConfig() {
-    if (this.isDevelopment) {
+    // Disable strict CSP for mobile app compatibility
+    const disableStrictCsp = process.env.DISABLE_STRICT_CSP === 'true';
+    const mobileAppMode = process.env.MOBILE_APP_MODE === 'true';
+    
+    if (this.isDevelopment || disableStrictCsp || mobileAppMode) {
       return {
         contentSecurityPolicy: false,
         crossOriginEmbedderPolicy: false,
-        crossOriginResourcePolicy: false
+        crossOriginResourcePolicy: false,
+        crossOriginOpenerPolicy: false
       };
     }
 
@@ -250,12 +275,17 @@ class SecurityConfig {
       
       // File upload validation
       fileUpload: {
-        maxSize: parseInt(process.env.MAX_FILE_SIZE) || 5242880, // 5MB
+        maxSize: parseInt(process.env.MAX_FILE_SIZE) || 10485760, // 10MB untuk mobile images
         allowedMimeTypes: [
           'image/jpeg',
+          'image/jpg',
           'image/png',
           'image/gif',
-          'image/webp'
+          'image/webp',
+          'image/heic', // iOS photos
+          'image/heif', // iOS photos
+          'image/bmp',
+          'image/tiff'
         ],
         maxFiles: 10
       }
